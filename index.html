@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Artale 闇黑龍王 — 本體閃招練習</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+    <header>
+      <h1>Artale 闇黑龍王 · 本體閃招練習</h1>
+      <p class="subtitle">8 部位全機制 · 可自訂按鍵 · 單機練習版</p>
+    </header>
+
+    <div class="layout">
+      <aside class="panel">
+        <section class="card">
+          <h2>狀態</h2>
+          <div class="stat-row"><span>HP</span><div class="bar-wrap"><div id="hpBar" class="bar hp"></div></div><span id="hpText">5000</span></div>
+          <div class="debuffs">
+            <div class="debuff" title="11 層以上即死">⚡ 帶電 <strong id="elec">0</strong>/11</div>
+            <div class="debuff" title="10 層以上危險">🩸 流血 <strong id="bleed">0</strong></div>
+            <div class="debuff" title="降移速與攻速">❄ 寒氣 <strong id="slow">0</strong></div>
+          </div>
+          <div class="stat-grid">
+            <div><span>存活</span><strong id="survive">0:00</strong></div>
+            <div><span>閃招</span><strong id="dodges">0</strong></div>
+            <div><span>中招</span><strong id="hits">0</strong></div>
+          </div>
+        </section>
+
+        <section class="card alert" id="attackAlert">
+          <h2>當前招式</h2>
+          <p id="attackName">準備中…</p>
+          <p id="attackHint" class="hint"></p>
+          <p id="stompSeq" class="seq"></p>
+        </section>
+
+        <section class="card">
+          <h2>本體機制一覽</h2>
+          <ul class="mech-list">
+            <li>腳：右輕→右重→左輕→左重（輕踩下層、重踩中層）</li>
+            <li>中頭：紅咬 7 秒（鎖定玩家位置）、噴火 60 秒、黑鎖鏈 ~30 秒</li>
+            <li>左右手：紅雷、魅惑、消技</li>
+            <li>左頭：冰錐 / 冰地板（寒氣）</li>
+            <li>右頭：落石雷、50% 狂暴大雷</li>
+            <li>尾巴：下甩必死、綠霧</li>
+            <li>翅膀：振翅、飛龍（祭壇規則提示）</li>
+            <li>三人以上靠近 → 導電串燒</li>
+          </ul>
+        </section>
+
+        <section class="card">
+          <h2>按鍵設定</h2>
+          <div class="key-grid" id="keyGrid"></div>
+          <button type="button" id="resetKeys" class="btn secondary">還原預設</button>
+        </section>
+
+        <section class="card" id="editorCard">
+          <h2>平台微調</h2>
+          <p class="hint editor-tip">進入微調模式後才會顯示平台標記；點選後可拖曳移動。</p>
+          <div class="editor-status" id="editorStatus">未選取</div>
+          <div class="editor-fields">
+            <label>X <input type="number" id="edX" step="1"></label>
+            <label>Y <input type="number" id="edY" step="1"></label>
+            <label>寬 <input type="number" id="edW" step="1" min="8"></label>
+            <label>高 <input type="number" id="edH" step="1" min="4"></label>
+          </div>
+          <select id="edSelect" class="ed-select"></select>
+          <button type="button" id="editToggleBtn" class="btn primary">進入微調模式</button>
+          <button type="button" id="savePlatformsBtn" class="btn secondary" disabled>儲存位置</button>
+          <button type="button" id="setDefaultPlatformsBtn" class="btn secondary" disabled>設為預設</button>
+          <button type="button" id="deletePlatformBtn" class="btn secondary" disabled>刪除選取</button>
+          <button type="button" id="resetPlatformsBtn" class="btn secondary" disabled>還原預設</button>
+          <button type="button" id="resetBuiltinPlatformsBtn" class="btn secondary" disabled>還原內建初始</button>
+        </section>
+      </aside>
+
+      <main class="stage-column">
+        <div class="stage-wrap">
+          <canvas id="game" width="960" height="540"></canvas>
+          <div id="overlay" class="overlay hidden">
+            <div class="overlay-box">
+              <h2 id="overlayTitle">Artale 闇黑龍王</h2>
+              <p id="overlayMsg">本體全機制閃招練習。熟悉紅咬、腳踩、導電與站位。</p>
+            </div>
+          </div>
+        </div>
+        <div class="stage-actions">
+          <button type="button" id="startBtn" class="btn primary">開始練習</button>
+          <button type="button" id="pauseBtn" class="btn secondary">暫停</button>
+          <button type="button" id="restartBtn" class="btn secondary">重新開始</button>
+        </div>
+      </main>
+    </div>
+  </div>
+  <script src="game.js"></script>
+</body>
+</html>
