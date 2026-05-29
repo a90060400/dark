@@ -24,4 +24,19 @@
 
 ## GitHub Pages（可選）
 
+## 程式更新
+- 新增 5 職業與技能（聖火、魔心、楓幣護盾、稻草人、閃索命等）
+- 法師 MP 系統：MP 條、魔心 80/20 分流、手動補 MP
+- 補品分類：寵物 / 手動 HP / 手動 MP，HP/補品改彈出視窗
+- 紅咬改為出現時固定位置，可走開或跳躍躲避
+- 多項本體機制與 UI 調整
+
+## 圖片資源（static/）
+- backgurend.png：關卡背景
+- dark.png：闇黑龍王本體顯示
+- （若有其他新增圖片，請依實際檔名填寫）
+
+## 部署
+- GitHub Pages：https://a90060400.github.io/dark/
+
 若要用 Pages 發布，在 repo Settings → Pages → Source 選 `main` 分支 `/ (root)` 即可。
