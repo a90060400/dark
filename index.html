@@ -13,11 +13,24 @@
       <p class="subtitle">8 部位全機制 · 可自訂按鍵 · 單機練習版</p>
     </header>
 
+    <div id="classOverlay" class="class-overlay">
+      <div class="class-box">
+        <h2>選擇職業</h2>
+        <p class="hint">進入練習前先選擇職業，將獲得對應技能。</p>
+        <div class="class-grid" id="classGrid"></div>
+      </div>
+    </div>
+
     <div class="layout">
       <aside class="panel">
         <section class="card">
           <h2>狀態</h2>
-          <div class="stat-row"><span>HP</span><div class="bar-wrap"><div id="hpBar" class="bar hp"></div></div><span id="hpText">5000</span></div>
+          <div class="stat-row"><span>HP</span><div class="bar-wrap"><div id="hpBar" class="bar hp"></div></div><span id="hpText">5000 / 5000</span></div>
+          <div class="stat-row" id="mpRow" hidden>
+            <span>MP</span>
+            <div class="bar-wrap"><div id="mpBar" class="bar mp"></div></div>
+            <span id="mpText">30000 / 30000</span>
+          </div>
           <div class="debuffs">
             <div class="debuff" title="11 層以上即死">⚡ 帶電 <strong id="elec">0</strong>/11</div>
             <div class="debuff" title="10 層以上危險">🩸 流血 <strong id="bleed">0</strong></div>
@@ -37,18 +50,17 @@
           <p id="stompSeq" class="seq"></p>
         </section>
 
-        <section class="card">
-          <h2>本體機制一覽</h2>
-          <ul class="mech-list">
-            <li>腳：右輕→右重→左輕→左重（輕踩下層、重踩中層）</li>
-            <li>中頭：紅咬 7 秒（鎖定玩家位置）、噴火 60 秒、黑鎖鏈 ~30 秒</li>
-            <li>左右手：紅雷、魅惑、消技</li>
-            <li>左頭：冰錐 / 冰地板（寒氣）</li>
-            <li>右頭：落石雷、50% 狂暴大雷</li>
-            <li>尾巴：下甩必死、綠霧</li>
-            <li>翅膀：振翅、飛龍（祭壇規則提示）</li>
-            <li>三人以上靠近 → 導電串燒</li>
-          </ul>
+        <section class="card potion-quick">
+          <h2>補品</h2>
+          <p class="potion-quick-summary" id="potionQuickSummary">寵物：拉麵 · 手動：拉麵</p>
+          <button type="button" id="openPotionBtn" class="btn secondary">HP / 補品設定</button>
+        </section>
+
+        <section class="card" id="skillCard">
+          <h2>職業技能</h2>
+          <p class="class-badge" id="classNameBadge">未選職業</p>
+          <div id="skillBar" class="skill-bar"></div>
+          <button type="button" id="changeClassBtn" class="btn secondary">更換職業</button>
         </section>
 
         <section class="card">
@@ -59,7 +71,7 @@
 
         <section class="card" id="editorCard">
           <h2>平台微調</h2>
-          <p class="hint editor-tip">進入微調模式後才會顯示平台標記；點選後可拖曳移動。</p>
+          <p class="hint editor-tip">微調模式可調平台、繩索、闇黑龍王本體圖（dark.png）與尾巴危險區。</p>
           <div class="editor-status" id="editorStatus">未選取</div>
           <div class="editor-fields">
             <label>X <input type="number" id="edX" step="1"></label>
@@ -92,7 +104,74 @@
           <button type="button" id="pauseBtn" class="btn secondary">暫停</button>
           <button type="button" id="restartBtn" class="btn secondary">重新開始</button>
         </div>
+        <section class="card stage-mech">
+          <h2>本體機制一覽</h2>
+          <ul class="mech-list">
+            <li>腳：右輕→右重→左輕→左重（輕踩下層、重踩中層）</li>
+            <li>中頭：紅咬 7 秒（鎖定玩家位置）、噴火 60 秒、黑鎖鏈（中線垂直，寬 ~100）</li>
+            <li>左右手：紅雷、魅惑、消技（中線分左右半，該側增益全消且可立刻重補）</li>
+            <li>左頭：冰錐 / 冰地板（寒氣）</li>
+            <li>右頭：落石雷、50% 狂暴大雷</li>
+            <li>尾巴：下甩必死、綠霧</li>
+            <li>翅膀：振翅、飛龍（祭壇規則提示）</li>
+            <li>三人以上靠近 → 導電串燒</li>
+          </ul>
+        </section>
       </main>
+    </div>
+
+    <div id="potionOverlay" class="potion-overlay hidden">
+      <div class="potion-modal" role="dialog" aria-labelledby="potionModalTitle" aria-modal="true">
+        <div class="potion-modal-header">
+          <h2 id="potionModalTitle">HP / 補品</h2>
+          <button type="button" id="closePotionBtn" class="btn secondary potion-close">關閉</button>
+        </div>
+        <div class="potion-modal-body">
+          <div class="hp-config">
+            <label class="hp-config-label">
+              最大 HP
+              <input type="number" id="maxHpInput" min="500" max="99999" step="100" value="5000">
+            </label>
+            <button type="button" id="applyHpBtn" class="btn secondary hp-apply">套用血量</button>
+          </div>
+          <div class="hp-config" id="maxMpConfig" hidden>
+            <label class="hp-config-label">
+              最大 MP
+              <input type="number" id="maxMpInput" min="100" max="99999" step="100" value="30000">
+            </label>
+            <button type="button" id="applyMpBtn" class="btn secondary hp-apply">套用 MP</button>
+          </div>
+          <p class="hint">套用後會依設定更新上限（練習中會保留目前比例）。</p>
+
+          <fieldset class="potion-fieldset">
+            <legend>寵物補血（擇一 · 每 2.5 秒自動）</legend>
+            <div class="potion-list" id="petHpPotionList"></div>
+          </fieldset>
+          <label class="pet-auto-toggle">
+            <input type="checkbox" id="petAutoHeal" checked>
+            啟用寵物自動補血
+          </label>
+          <p class="potion-selected" id="petPotionSelectedText">寵物補血：拉麵 +1500</p>
+
+          <fieldset class="potion-fieldset">
+            <legend>手動補血（擇一）</legend>
+            <div class="potion-list" id="manualHpPotionList"></div>
+          </fieldset>
+          <button type="button" id="useManualHpBtn" class="btn primary">手動補血</button>
+          <p class="potion-selected" id="manualHpSelectedText">手動補血：拉麵 +1500</p>
+
+          <div id="mpPotionSection" hidden>
+            <fieldset class="potion-fieldset">
+              <legend>手動補 MP（擇一 · 法師）</legend>
+              <div class="potion-list" id="manualMpPotionList"></div>
+            </fieldset>
+            <button type="button" id="useManualMpBtn" class="btn primary">手動補 MP</button>
+            <p class="potion-selected" id="manualMpSelectedText">手動補 MP：刨冰 +2000 MP</p>
+          </div>
+
+          <p class="hint potion-msg" id="potionMsg"></p>
+        </div>
+      </div>
     </div>
   </div>
   <script src="game.js"></script>

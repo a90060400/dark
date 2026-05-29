@@ -14,20 +14,155 @@
     paintPreview();
   };
 
+  const darkBossImage = new Image();
+  darkBossImage.src = "static/dark.png";
+  let darkBossReady = false;
+  let darkBossCustomLayout = false;
+
   const DEFAULT_KEYS = {
     left: "ArrowLeft",
     right: "ArrowRight",
     up: "ArrowUp",
     down: "ArrowDown",
     jump: "Space",
+    skill1: "KeyX",
+    skill2: "KeyC",
+    manualHp: "KeyZ",
+    manualMp: "KeyV",
   };
 
-  const KEY_LABELS = {
+  const BASE_KEY_LABELS = {
     left: "左移",
     right: "右移",
     up: "上 / 爬繩",
     down: "下 / 下繩",
     jump: "跳躍",
+    manualHp: "手動補血",
+    manualMp: "手動補 MP",
+  };
+
+  const CLASSES = {
+    dk: {
+      id: "dk",
+      name: "黑騎士",
+      skills: [
+        {
+          id: "holyFire",
+          name: "聖火",
+          key: "skill1",
+          desc: "設定 HP ×1.6（消技自動 ÷1.6）",
+        },
+        {
+          id: "powerDispel",
+          name: "力消",
+          key: "skill2",
+          desc: "15 秒內物理傷害 -35%",
+        },
+      ],
+    },
+    mage: {
+      id: "mage",
+      name: "法師",
+      skills: [
+        {
+          id: "magicGuard",
+          name: "魔心",
+          key: "skill1",
+          desc: "45 秒內受傷 80% 扣 MP、20% 扣 HP",
+        },
+      ],
+    },
+    thief: {
+      id: "thief",
+      name: "刀賊",
+      skills: [
+        {
+          id: "mesoGuard",
+          name: "楓幣護盾",
+          key: "skill1",
+          desc: "抵擋下一次傷害",
+        },
+      ],
+    },
+    archer: {
+      id: "archer",
+      name: "弓箭手",
+      skills: [
+        {
+          id: "puppet",
+          name: "稻草人",
+          key: "skill1",
+          desc: "放置稻草人，吸收 1 次攻擊（30 秒）",
+        },
+      ],
+    },
+    pirate: {
+      id: "pirate",
+      name: "海盜",
+      skills: [
+        {
+          id: "flashFist",
+          name: "閃索命",
+          key: "skill1",
+          desc: "將翼龍拉向自身位置",
+        },
+      ],
+    },
+  };
+
+  const MAGIC_ATTACK_TYPES = new Set([
+    "iceCone",
+    "iceFloor",
+    "bolt",
+    "bigBolt",
+    "redLightning",
+    "fireBlast",
+    "chain",
+  ]);
+
+  const PHYSICAL_ATTACK_TYPES = new Set(["stomp", "bite", "tail", "flutter"]);
+
+  const HOLY_FIRE_MULT = 1.6;
+
+  const HP_POTIONS = [
+    { id: "ramen", name: "拉麵", heal: 1500 },
+    { id: "popsicle", name: "棒冰棒", heal: 2000 },
+    { id: "cheese", name: "起司乳酪", heal: 4000 },
+    { id: "reindeer", name: "馴鹿奶", heal: 5000 },
+    { id: "cherry_pie", name: "櫻桃派", heal: 2000, mpRestore: 2000 },
+  ];
+
+  const MP_POTIONS = [
+    { id: "shaved_ice", name: "刨冰", restore: 2000 },
+    { id: "cherry_pie", name: "櫻桃派", restore: 2000, heal: 2000 },
+    { id: "morning_dew", name: "清晨之露", restore: 4000 },
+    { id: "dusk_dew", name: "黃昏之露", restore: 5000 },
+    { id: "special", name: "特殊藥水", restorePercent: 0.5 },
+    { id: "super", name: "超級藥水", restorePercent: 1 },
+  ];
+
+  const DEFAULT_PLAYER_SETTINGS = {
+    maxHp: 5000,
+    maxMp: 30000,
+    petHpPotionId: "ramen",
+    manualHpPotionId: "ramen",
+    manualMpPotionId: "shaved_ice",
+    petAutoHeal: true,
+  };
+
+  const PET_HEAL_INTERVAL = 2.5;
+
+  let playerSettings = loadPlayerSettings();
+  let playerClass = null;
+
+  const skillState = {
+    holyFire: 0,
+    powerDispel: 0,
+    magicGuard: 0,
+    mesoShield: 0,
+    puppet: null,
+    msg: "",
+    msgTimer: 0,
   };
 
   const STOMP_CYCLE = [
@@ -56,6 +191,9 @@
   const ui = {
     hpBar: document.getElementById("hpBar"),
     hpText: document.getElementById("hpText"),
+    mpRow: document.getElementById("mpRow"),
+    mpBar: document.getElementById("mpBar"),
+    mpText: document.getElementById("mpText"),
     elec: document.getElementById("elec"),
     bleed: document.getElementById("bleed"),
     slow: document.getElementById("slow"),
@@ -68,6 +206,31 @@
     overlay: document.getElementById("overlay"),
     overlayTitle: document.getElementById("overlayTitle"),
     overlayMsg: document.getElementById("overlayMsg"),
+    maxHpInput: document.getElementById("maxHpInput"),
+    applyHpBtn: document.getElementById("applyHpBtn"),
+    maxMpConfig: document.getElementById("maxMpConfig"),
+    maxMpInput: document.getElementById("maxMpInput"),
+    applyMpBtn: document.getElementById("applyMpBtn"),
+    petHpPotionList: document.getElementById("petHpPotionList"),
+    manualHpPotionList: document.getElementById("manualHpPotionList"),
+    manualMpPotionList: document.getElementById("manualMpPotionList"),
+    potionSelectedText: document.getElementById("petPotionSelectedText"),
+    manualHpSelectedText: document.getElementById("manualHpSelectedText"),
+    manualMpSelectedText: document.getElementById("manualMpSelectedText"),
+    useManualHpBtn: document.getElementById("useManualHpBtn"),
+    useManualMpBtn: document.getElementById("useManualMpBtn"),
+    mpPotionSection: document.getElementById("mpPotionSection"),
+    petAutoHeal: document.getElementById("petAutoHeal"),
+    potionMsg: document.getElementById("potionMsg"),
+    potionOverlay: document.getElementById("potionOverlay"),
+    openPotionBtn: document.getElementById("openPotionBtn"),
+    closePotionBtn: document.getElementById("closePotionBtn"),
+    potionQuickSummary: document.getElementById("potionQuickSummary"),
+    classOverlay: document.getElementById("classOverlay"),
+    classGrid: document.getElementById("classGrid"),
+    classNameBadge: document.getElementById("classNameBadge"),
+    skillBar: document.getElementById("skillBar"),
+    changeClassBtn: document.getElementById("changeClassBtn"),
   };
 
   const pressed = new Set();
@@ -104,8 +267,65 @@
     { id: "rope-R2", label: "繩D", x: 910, y: 210, h: 130 },
   ];
 
+  const DEFAULT_TAIL_ZONE = {
+    id: "tail-danger",
+    label: "尾巴危險區",
+    x: 820,
+    y: 380,
+    w: 130,
+    h: 100,
+  };
+
+  const DEFAULT_DARK_BOSS = {
+    id: "dark-boss",
+    label: "闇黑龍王",
+    x: 280,
+    y: 90,
+    w: 400,
+    h: 360,
+  };
+
   let platforms = [];
   let ropes = [];
+  let tailZone = { ...DEFAULT_TAIL_ZONE };
+  let darkBoss = { ...DEFAULT_DARK_BOSS };
+
+  function cloneTailZone(z) {
+    return { ...DEFAULT_TAIL_ZONE, ...z };
+  }
+
+  function cloneDarkBoss(d) {
+    return { ...DEFAULT_DARK_BOSS, ...d };
+  }
+
+  function centerDarkBossSize() {
+    const iw = darkBossImage.naturalWidth || DEFAULT_DARK_BOSS.w;
+    const ih = darkBossImage.naturalHeight || DEFAULT_DARK_BOSS.h;
+    const maxW = W * 0.52;
+    const maxH = H * 0.62;
+    let bw = iw;
+    let bh = ih;
+    if (bw > maxW || bh > maxH) {
+      const scale = Math.min(maxW / bw, maxH / bh);
+      bw = Math.max(32, Math.floor(bw * scale));
+      bh = Math.max(32, Math.floor(bh * scale));
+    }
+    darkBoss.w = bw;
+    darkBoss.h = bh;
+    darkBoss.x = Math.floor((W - bw) / 2);
+    darkBoss.y = Math.floor((H - bh) / 2);
+  }
+
+  function finalizeDarkBossLayout(forceCenter) {
+    if (!darkBossReady) return;
+    if (!darkBossCustomLayout || forceCenter) centerDarkBossSize();
+  }
+
+  darkBossImage.onload = () => {
+    darkBossReady = true;
+    finalizeDarkBossLayout(false);
+    paintPreview();
+  };
 
   function clonePlatforms(list) {
     return list.map((p) => ({ ...p }));
@@ -122,7 +342,19 @@
     return {
       platforms: clonePlatforms(DEFAULT_PLATFORMS),
       ropes: cloneRopes(DEFAULT_ROPES),
+      tailZone: cloneTailZone(DEFAULT_TAIL_ZONE),
+      darkBoss: cloneDarkBoss(DEFAULT_DARK_BOSS),
     };
+  }
+
+  function applyLayoutTemplate(tpl, resetDarkBossLayout) {
+    platforms = tpl.platforms;
+    ropes = tpl.ropes;
+    tailZone = cloneTailZone(tpl.tailZone || DEFAULT_TAIL_ZONE);
+    darkBoss = cloneDarkBoss(tpl.darkBoss || DEFAULT_DARK_BOSS);
+    darkBossCustomLayout = !!tpl.darkBoss && !resetDarkBossLayout;
+    if (resetDarkBossLayout) darkBossCustomLayout = false;
+    finalizeDarkBossLayout(resetDarkBossLayout);
   }
 
   function getSavedDefaultTemplate() {
@@ -134,6 +366,8 @@
           return {
             platforms: clonePlatforms(data.platforms),
             ropes: cloneRopes(Array.isArray(data.ropes) ? data.ropes : DEFAULT_ROPES),
+            tailZone: cloneTailZone(data.tailZone || DEFAULT_TAIL_ZONE),
+            darkBoss: cloneDarkBoss(data.darkBoss || DEFAULT_DARK_BOSS),
           };
         }
       }
@@ -156,30 +390,40 @@
         const data = JSON.parse(raw);
         if (Array.isArray(data.platforms)) platforms = clonePlatforms(data.platforms);
         if (Array.isArray(data.ropes)) ropes = cloneRopes(data.ropes);
-        if (platforms.length) return;
+        if (data.tailZone) tailZone = cloneTailZone(data.tailZone);
+        if (data.darkBoss) {
+          darkBoss = cloneDarkBoss(data.darkBoss);
+          darkBossCustomLayout = true;
+        }
+        if (platforms.length) {
+          finalizeDarkBossLayout(false);
+          return;
+        }
       }
     } catch (_) {}
-    const tpl = getSavedDefaultTemplate();
-    platforms = tpl.platforms;
-    ropes = tpl.ropes;
+    applyLayoutTemplate(getSavedDefaultTemplate(), false);
   }
 
   function savePlatforms() {
-    localStorage.setItem(STORAGE_PLATFORMS, JSON.stringify({ platforms, ropes }));
+    localStorage.setItem(
+      STORAGE_PLATFORMS,
+      JSON.stringify({ platforms, ropes, tailZone, darkBoss })
+    );
     syncEditorFields();
     setEditorStatus("已儲存目前位置");
   }
 
   function setCurrentAsDefault() {
-    localStorage.setItem(STORAGE_DEFAULTS, JSON.stringify({ platforms, ropes }));
+    localStorage.setItem(
+      STORAGE_DEFAULTS,
+      JSON.stringify({ platforms, ropes, tailZone, darkBoss })
+    );
     savePlatforms();
     setEditorStatus("已設為預設。「還原預設」將使用這組配置。");
   }
 
   function resetPlatformsToDefault() {
-    const tpl = getSavedDefaultTemplate();
-    platforms = tpl.platforms;
-    ropes = tpl.ropes;
+    applyLayoutTemplate(getSavedDefaultTemplate(), false);
     selected = null;
     buildEditorSelect();
     if (platforms.length) selectItem("platform", platforms[0].id);
@@ -189,9 +433,7 @@
   }
 
   function resetPlatformsToBuiltin() {
-    const tpl = getBuiltinDefaults();
-    platforms = tpl.platforms;
-    ropes = tpl.ropes;
+    applyLayoutTemplate(getBuiltinDefaults(), true);
     selected = null;
     buildEditorSelect();
     selectItem("platform", "ground");
@@ -202,6 +444,14 @@
   function deleteSelectedItem() {
     if (!selected) {
       setEditorStatus("請先選取要刪除的平台或繩索");
+      return;
+    }
+    if (selected.type === "tailZone") {
+      setEditorStatus("尾巴危險區不可刪除，只能調整位置與大小");
+      return;
+    }
+    if (selected.type === "darkBoss") {
+      setEditorStatus("闇黑龍王本體圖不可刪除，只能調整位置與大小");
       return;
     }
     if (selected.type === "platform") {
@@ -243,6 +493,8 @@
     layer: "ground",
     hp: 5000,
     maxHp: 5000,
+    mp: 30000,
+    maxMp: 30000,
     elec: 0,
     bleed: 0,
     slow: 0,
@@ -253,6 +505,7 @@
     dropThrough: 0,
     dropThroughPlatform: null,
     onPlatform: null,
+    facing: 1,
   };
 
   const npcs = [
@@ -288,6 +541,8 @@
     handRedTimer: 12,
     leftSeduceTimer: 18,
     rightSeduceTimer: 22,
+    leftDispelTimer: 26,
+    rightDispelTimer: 30,
     tailSweepTimer: 14,
     tailMistTimer: 20,
     wingFlutterTimer: 25,
@@ -306,7 +561,333 @@
     currentAttackHint: "按「開始練習」進入本體全機制",
     bleedTick: 0,
     conductionFlash: 0,
+    petHealTimer: 0,
+    redBite: null,
+    redBiteTrack: null,
+    redBiteLive: null,
   };
+
+  function loadPlayerSettings() {
+    try {
+      const raw = localStorage.getItem("artale-ht-player");
+      if (raw) {
+        const data = { ...DEFAULT_PLAYER_SETTINGS, ...JSON.parse(raw) };
+        if (data.potionId && !data.petHpPotionId) data.petHpPotionId = data.potionId;
+        if (data.petPotionId && !data.petHpPotionId) data.petHpPotionId = data.petPotionId;
+        if (!data.manualHpPotionId) data.manualHpPotionId = data.petHpPotionId || "ramen";
+        if (!data.manualMpPotionId) data.manualMpPotionId = "shaved_ice";
+        if (!MP_POTIONS.some((p) => p.id === data.manualMpPotionId)) data.manualMpPotionId = "shaved_ice";
+        if (!data.maxMp) data.maxMp = 30000;
+        if (data.petAutoHeal === undefined) data.petAutoHeal = true;
+        return data;
+      }
+    } catch (_) {}
+    return { ...DEFAULT_PLAYER_SETTINGS };
+  }
+
+  function savePlayerSettings() {
+    localStorage.setItem("artale-ht-player", JSON.stringify(playerSettings));
+  }
+
+  function getCurrentClass() {
+    return playerClass ? CLASSES[playerClass] : null;
+  }
+
+  function isMage() {
+    return playerClass === "mage";
+  }
+
+  function getKeyLabels() {
+    const labels = { ...BASE_KEY_LABELS };
+    if (!isMage()) delete labels.manualMp;
+    const cls = getCurrentClass();
+    if (cls) {
+      cls.skills.forEach((sk) => {
+        labels[sk.key] = sk.name;
+      });
+    }
+    return labels;
+  }
+
+  function recalcMaxHp() {
+    const base = playerSettings.maxHp;
+    player.maxHp = skillState.holyFire > 0 ? Math.floor(base * HOLY_FIRE_MULT) : base;
+    player.hp = Math.min(player.hp, player.maxHp);
+  }
+
+  function applyHolyFireEffect() {
+    const base = playerSettings.maxHp;
+    player.maxHp = Math.floor(base * HOLY_FIRE_MULT);
+    player.hp = Math.min(player.maxHp, Math.floor(player.hp * HOLY_FIRE_MULT));
+  }
+
+  function removeHolyFireEffect() {
+    if (skillState.holyFire <= 0) return;
+    player.hp = Math.max(1, Math.floor(player.hp / HOLY_FIRE_MULT));
+    skillState.holyFire = 0;
+    player.maxHp = playerSettings.maxHp;
+    player.hp = Math.min(player.hp, player.maxHp);
+  }
+
+  function syncMpToSettings(fullHeal) {
+    if (!isMage()) return;
+    player.maxMp = playerSettings.maxMp;
+    if (fullHeal) player.mp = player.maxMp;
+    else player.mp = Math.min(player.mp, player.maxMp);
+  }
+
+  function syncPlayerSettingsToPlayer(fullHeal) {
+    recalcMaxHp();
+    syncMpToSettings(fullHeal);
+    if (fullHeal) player.hp = player.maxHp;
+    else player.hp = Math.min(player.hp, player.maxHp);
+  }
+
+  function getSelectedPetHpPotion() {
+    return HP_POTIONS.find((p) => p.id === playerSettings.petHpPotionId) || HP_POTIONS[0];
+  }
+
+  function getSelectedManualHpPotion() {
+    return HP_POTIONS.find((p) => p.id === playerSettings.manualHpPotionId) || HP_POTIONS[0];
+  }
+
+  function getSelectedManualMpPotion() {
+    return MP_POTIONS.find((p) => p.id === playerSettings.manualMpPotionId) || MP_POTIONS[0];
+  }
+
+  function getMpRestoreAmount(pot) {
+    if (pot.restorePercent != null) return Math.floor(player.maxMp * pot.restorePercent);
+    return pot.restore || 0;
+  }
+
+  function formatHpPotionHeal(pot) {
+    if (pot.mpRestore && isMage()) return `+${pot.heal} · MP +${pot.mpRestore}`;
+    return `+${pot.heal}`;
+  }
+
+  function formatMpPotionRestore(pot) {
+    if (pot.restorePercent != null) return `+${Math.round(pot.restorePercent * 100)}% MP`;
+    if (pot.heal) return `+${pot.restore} MP · HP +${pot.heal}`;
+    return `+${pot.restore} MP`;
+  }
+
+  function formatMpPotionRestoreShort(pot) {
+    if (pot.restorePercent != null) return `+${Math.round(pot.restorePercent * 100)}% MP`;
+    return `+${getMpRestoreAmount(pot)} MP`;
+  }
+
+  function buildHpPotionList(container, name, selectedId, onSelect) {
+    container.innerHTML = "";
+    for (const pot of HP_POTIONS) {
+      const label = document.createElement("label");
+      label.className = "potion-option";
+      const input = document.createElement("input");
+      input.type = "radio";
+      input.name = name;
+      input.value = pot.id;
+      input.checked = selectedId === pot.id;
+      input.addEventListener("change", () => {
+        if (!input.checked) return;
+        onSelect(pot.id);
+      });
+      const potName = document.createElement("span");
+      potName.textContent = pot.name;
+      const heal = document.createElement("span");
+      heal.className = "potion-heal";
+      heal.textContent = formatHpPotionHeal(pot);
+      label.append(input, potName, heal);
+      container.appendChild(label);
+    }
+  }
+
+  function buildMpPotionList() {
+    ui.manualMpPotionList.innerHTML = "";
+    for (const pot of MP_POTIONS) {
+      const label = document.createElement("label");
+      label.className = "potion-option";
+      const input = document.createElement("input");
+      input.type = "radio";
+      input.name = "manualMpPotionChoice";
+      input.value = pot.id;
+      input.checked = playerSettings.manualMpPotionId === pot.id;
+      input.addEventListener("change", () => {
+        if (!input.checked) return;
+        playerSettings.manualMpPotionId = pot.id;
+        savePlayerSettings();
+        refreshPotionLabels();
+      });
+      const potName = document.createElement("span");
+      potName.textContent = pot.name;
+      const heal = document.createElement("span");
+      heal.className = "potion-heal";
+      heal.textContent = formatMpPotionRestore(pot);
+      label.append(input, potName, heal);
+      ui.manualMpPotionList.appendChild(label);
+    }
+  }
+
+  function buildPotionList() {
+    buildHpPotionList(ui.petHpPotionList, "petHpPotionChoice", playerSettings.petHpPotionId, (id) => {
+      playerSettings.petHpPotionId = id;
+      savePlayerSettings();
+      refreshPotionLabels();
+    });
+    buildHpPotionList(ui.manualHpPotionList, "manualHpPotionChoice", playerSettings.manualHpPotionId, (id) => {
+      playerSettings.manualHpPotionId = id;
+      savePlayerSettings();
+      refreshPotionLabels();
+    });
+    buildMpPotionList();
+    if (ui.petAutoHeal) ui.petAutoHeal.checked = playerSettings.petAutoHeal;
+  }
+
+  function refreshPotionLabels() {
+    const petPot = getSelectedPetHpPotion();
+    const manualHpPot = getSelectedManualHpPotion();
+    const manualMpPot = getSelectedManualMpPotion();
+    ui.potionSelectedText.textContent = playerSettings.petAutoHeal
+      ? `寵物補血：${petPot.name} +${petPot.heal} · 每 ${PET_HEAL_INTERVAL} 秒`
+      : `寵物自動補血已關閉（已選 ${petPot.name} +${petPot.heal}）`;
+    ui.manualHpSelectedText.textContent = `手動補血：${manualHpPot.name} ${formatHpPotionHeal(manualHpPot)}`;
+    ui.manualMpSelectedText.textContent = `手動補 MP：${manualMpPot.name} ${formatMpPotionRestoreShort(manualMpPot)}`;
+    ui.useManualHpBtn.textContent = `手動補血（${manualHpPot.name}）`;
+    ui.useManualMpBtn.textContent = `手動補 MP（${manualMpPot.name}）`;
+    ui.maxHpInput.value = playerSettings.maxHp;
+    ui.maxMpInput.value = playerSettings.maxMp;
+    if (ui.potionQuickSummary) {
+      const parts = [
+        playerSettings.petAutoHeal ? `寵物 ${petPot.name}` : "寵物關",
+        `手動 ${manualHpPot.name}`,
+      ];
+      if (isMage()) parts.push(`MP ${manualMpPot.name}`);
+      ui.potionQuickSummary.textContent = parts.join(" · ");
+    }
+  }
+
+  function showPotionOverlay() {
+    if (!ui.potionOverlay) return;
+    ui.potionOverlay.classList.remove("hidden");
+  }
+
+  function hidePotionOverlay() {
+    if (!ui.potionOverlay) return;
+    ui.potionOverlay.classList.add("hidden");
+  }
+
+  function updateClassUi() {
+    const mage = isMage();
+    if (ui.mpRow) ui.mpRow.hidden = !mage;
+    if (ui.maxMpConfig) ui.maxMpConfig.hidden = !mage;
+    if (ui.mpPotionSection) ui.mpPotionSection.hidden = !mage;
+    if (!mage && ui.mpBar) ui.mpBar.style.width = "0%";
+    buildKeyGrid();
+    buildPotionList();
+    refreshPotionLabels();
+    updateUI();
+  }
+
+  function applyPetHeal() {
+    if (player.dead || !playerSettings.petAutoHeal) return;
+    const pot = getSelectedPetHpPotion();
+    const before = player.hp;
+    if (before >= player.maxHp) {
+      ui.potionMsg.textContent = `寵物 · ${pot.name}：HP 已滿`;
+      return;
+    }
+    player.hp = Math.min(player.maxHp, player.hp + pot.heal);
+    const gained = Math.floor(player.hp - before);
+    updateUI();
+    ui.potionMsg.textContent = `寵物補血 · ${pot.name} +${gained} HP（${Math.floor(player.hp)} / ${player.maxHp}）`;
+  }
+
+  function useManualHpPotion() {
+    if (player.dead) {
+      ui.potionMsg.textContent = "已陣亡，請重新開始";
+      return;
+    }
+    const pot = getSelectedManualHpPotion();
+    const before = player.hp;
+    if (before >= player.maxHp) {
+      ui.potionMsg.textContent = `手動 · ${pot.name}：HP 已滿`;
+      return;
+    }
+    player.hp = Math.min(player.maxHp, player.hp + pot.heal);
+    const gained = Math.floor(player.hp - before);
+    let msg = `手動補血 · ${pot.name} +${gained} HP（${Math.floor(player.hp)} / ${player.maxHp}）`;
+    if (pot.mpRestore && isMage()) {
+      const mpBefore = player.mp;
+      player.mp = Math.min(player.maxMp, player.mp + pot.mpRestore);
+      const mpGained = Math.floor(player.mp - mpBefore);
+      if (mpGained > 0) msg += ` · MP +${mpGained}`;
+    }
+    updateUI();
+    ui.potionMsg.textContent = msg;
+  }
+
+  function useManualMpPotion() {
+    if (!isMage()) return;
+    if (player.dead) {
+      ui.potionMsg.textContent = "已陣亡，請重新開始";
+      return;
+    }
+    const pot = getSelectedManualMpPotion();
+    const before = player.mp;
+    if (before >= player.maxMp) {
+      ui.potionMsg.textContent = `手動 · ${pot.name}：MP 已滿`;
+      return;
+    }
+    const restore = getMpRestoreAmount(pot);
+    player.mp = Math.min(player.maxMp, player.mp + restore);
+    const gained = Math.floor(player.mp - before);
+    let msg = `手動補 MP · ${pot.name} +${gained} MP（${Math.floor(player.mp)} / ${player.maxMp}）`;
+    if (pot.heal) {
+      const hpBefore = player.hp;
+      player.hp = Math.min(player.maxHp, player.hp + pot.heal);
+      const hpGained = Math.floor(player.hp - hpBefore);
+      if (hpGained > 0) msg += ` · HP +${hpGained}`;
+    }
+    updateUI();
+    ui.potionMsg.textContent = msg;
+  }
+
+  function updatePetHeal(dt) {
+    if (!running || paused || editMode || player.dead || !playerSettings.petAutoHeal) return;
+    state.petHealTimer += dt;
+    if (state.petHealTimer < PET_HEAL_INTERVAL) return;
+    state.petHealTimer -= PET_HEAL_INTERVAL;
+    applyPetHeal();
+  }
+
+  function applyMaxHpFromInput() {
+    let value = parseInt(ui.maxHpInput.value, 10);
+    if (Number.isNaN(value)) {
+      ui.potionMsg.textContent = "請輸入有效 HP 數值";
+      return;
+    }
+    value = Math.max(500, Math.min(99999, value));
+    playerSettings.maxHp = value;
+    ui.maxHpInput.value = value;
+    savePlayerSettings();
+    syncPlayerSettingsToPlayer(!running);
+    updateUI();
+    ui.potionMsg.textContent = running ? `最大 HP 已設為 ${value}` : `最大 HP ${value}，已補滿`;
+  }
+
+  function applyMaxMpFromInput() {
+    if (!isMage()) return;
+    let value = parseInt(ui.maxMpInput.value, 10);
+    if (Number.isNaN(value)) {
+      ui.potionMsg.textContent = "請輸入有效 MP 數值";
+      return;
+    }
+    value = Math.max(100, Math.min(99999, value));
+    playerSettings.maxMp = value;
+    ui.maxMpInput.value = value;
+    savePlayerSettings();
+    syncMpToSettings(!running);
+    updateUI();
+    ui.potionMsg.textContent = running ? `最大 MP 已設為 ${value}` : `最大 MP ${value}，已補滿`;
+  }
 
   function loadKeys() {
     try {
@@ -331,11 +912,12 @@
   function buildKeyGrid() {
     const grid = document.getElementById("keyGrid");
     grid.innerHTML = "";
-    for (const action of Object.keys(KEY_LABELS)) {
+    const labels = getKeyLabels();
+    for (const action of Object.keys(labels)) {
       const row = document.createElement("div");
       row.className = "key-row";
       const label = document.createElement("label");
-      label.textContent = KEY_LABELS[action];
+      label.textContent = labels[action];
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "key-btn";
@@ -345,6 +927,241 @@
       row.append(label, btn);
       grid.appendChild(row);
     }
+  }
+
+  function buildClassGrid() {
+    ui.classGrid.innerHTML = "";
+    for (const cls of Object.values(CLASSES)) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "class-btn";
+      btn.dataset.classId = cls.id;
+      const skillText = cls.skills.map((s) => s.name).join(" · ");
+      btn.innerHTML = `<strong>${cls.name}</strong><span>${skillText}</span>`;
+      btn.addEventListener("click", () => selectClass(cls.id));
+      ui.classGrid.appendChild(btn);
+    }
+  }
+
+  function showClassOverlay() {
+    ui.classOverlay.classList.remove("hidden");
+  }
+
+  function hideClassOverlay() {
+    ui.classOverlay.classList.add("hidden");
+  }
+
+  function selectClass(classId) {
+    if (!CLASSES[classId]) return;
+    playerClass = classId;
+    hideClassOverlay();
+    resetSkillState();
+    buildKeyGrid();
+    renderSkillBar();
+    ui.classNameBadge.textContent = CLASSES[classId].name;
+    if (isMage()) syncMpToSettings(true);
+    updateClassUi();
+    setSkillMsg(`已選擇 ${CLASSES[classId].name}`);
+  }
+
+  function clearActiveBuffs() {
+    removeHolyFireEffect();
+    skillState.powerDispel = 0;
+    skillState.magicGuard = 0;
+    skillState.mesoShield = 0;
+    skillState.puppet = null;
+    recalcMaxHp();
+  }
+
+  function resetSkillState() {
+    skillState.holyFire = 0;
+    skillState.powerDispel = 0;
+    skillState.magicGuard = 0;
+    skillState.mesoShield = 0;
+    skillState.puppet = null;
+    skillState.msg = "";
+    skillState.msgTimer = 0;
+    recalcMaxHp();
+  }
+
+  function setSkillMsg(text) {
+    skillState.msg = text;
+    skillState.msgTimer = 2.5;
+    if (!running) ui.potionMsg.textContent = text;
+  }
+
+  function renderSkillBar() {
+    ui.skillBar.innerHTML = "";
+    const cls = getCurrentClass();
+    if (!cls) {
+      ui.classNameBadge.textContent = "未選職業";
+      return;
+    }
+    ui.classNameBadge.textContent = cls.name;
+    cls.skills.forEach((skill, index) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "btn secondary skill-btn";
+      btn.dataset.skillIndex = String(index);
+      const keyName = keyDisplay(keys[skill.key]);
+      btn.innerHTML = `<strong>${skill.name}</strong> [${keyName}]<small>${skill.desc}</small>`;
+      btn.addEventListener("click", () => useSkill(index));
+      ui.skillBar.appendChild(btn);
+    });
+  }
+
+  function updateSkillTimers(dt) {
+    if (skillState.holyFire > 0) {
+      skillState.holyFire = Math.max(0, skillState.holyFire - dt);
+      if (skillState.holyFire <= 0) {
+        removeHolyFireEffect();
+        setSkillMsg("聖火結束：HP ÷1.6");
+        updateUI();
+      }
+    }
+    if (skillState.powerDispel > 0) skillState.powerDispel = Math.max(0, skillState.powerDispel - dt);
+    if (skillState.magicGuard > 0) skillState.magicGuard = Math.max(0, skillState.magicGuard - dt);
+    if (skillState.puppet) {
+      skillState.puppet.t += dt;
+      if (skillState.puppet.t >= skillState.puppet.duration) skillState.puppet = null;
+    }
+    if (skillState.msgTimer > 0) {
+      skillState.msgTimer -= dt;
+      if (skillState.msgTimer <= 0) skillState.msg = "";
+    }
+  }
+
+  function useSkill(index) {
+    const cls = getCurrentClass();
+    if (!cls || player.dead) return;
+    const skill = cls.skills[index];
+    if (!skill) return;
+
+    let ok = false;
+    if (skill.id === "holyFire") ok = castHolyFire(skill);
+    else if (skill.id === "powerDispel") ok = castPowerDispel(skill);
+    else if (skill.id === "magicGuard") ok = castMagicGuard(skill);
+    else if (skill.id === "mesoGuard") ok = castMesoGuard(skill);
+    else if (skill.id === "puppet") ok = castPuppet(skill);
+    else if (skill.id === "flashFist") ok = castFlashFist(skill);
+
+    if (ok) renderSkillBar();
+  }
+
+  function castHolyFire(skill) {
+    if (skillState.holyFire > 0) {
+      setSkillMsg("聖火仍在生效中");
+      return false;
+    }
+    skillState.holyFire = 90;
+    applyHolyFireEffect();
+    updateUI();
+    setSkillMsg(`聖火：${playerSettings.maxHp} ×1.6 → ${player.maxHp} HP`);
+    return true;
+  }
+
+  function castPowerDispel(skill) {
+    skillState.powerDispel = 15;
+    setSkillMsg("力消：15 秒內物理傷害 -35%");
+    return true;
+  }
+
+  function castMagicGuard(skill) {
+    skillState.magicGuard = 45;
+    setSkillMsg("魔心：受傷 80% 扣 MP、20% 扣 HP（45 秒）");
+    return true;
+  }
+
+  function castMesoGuard(skill) {
+    if (skillState.mesoShield > 0) {
+      setSkillMsg("楓幣護盾已存在");
+      return false;
+    }
+    skillState.mesoShield = 1;
+    setSkillMsg("楓幣護盾：抵擋下一次傷害");
+    return true;
+  }
+
+  function castPuppet(skill) {
+    if (skillState.puppet) {
+      setSkillMsg("已有稻草人");
+      return false;
+    }
+    skillState.puppet = {
+      x: player.x - 8,
+      y: player.y,
+      w: 24,
+      h: 44,
+      t: 0,
+      duration: 30,
+      hp: 1,
+    };
+    setSkillMsg("稻草人已放置");
+    return true;
+  }
+
+  function castFlashFist(skill) {
+    if (!state.dragons.length) {
+      setSkillMsg("目前沒有翼龍可拉");
+      return false;
+    }
+    const anchorX = player.x + player.w / 2;
+    const anchorY = player.y + player.h;
+    state.dragons.forEach((d, i) => {
+      d.vx = 0;
+      d.stunned = 0;
+      d.pullTimer = 1.2;
+      d.pullTargetX = anchorX - d.w / 2 + (i - (state.dragons.length - 1) / 2) * 26;
+      d.pullTargetY = anchorY - d.h + 4;
+    });
+    setSkillMsg("閃索命：翼龍拉向你的位置");
+    return true;
+  }
+
+  function puppetBlocksAttack(atk) {
+    const pup = skillState.puppet;
+    if (!pup || pup.hp <= 0) return false;
+    if (!inRect(pup.x, pup.y, atk)) return false;
+    pup.hp = 0;
+    skillState.puppet = null;
+    setSkillMsg("稻草人吸收了攻擊");
+    dodgeCount++;
+    return true;
+  }
+
+  function applySkillDamageMods(atk, dmg) {
+    let out = dmg;
+    if (skillState.powerDispel > 0 && PHYSICAL_ATTACK_TYPES.has(atk.type)) {
+      out *= 0.65;
+    }
+    return out;
+  }
+
+  function applyDamageSplit(dmg) {
+    if (skillState.magicGuard > 0 && isMage()) {
+      const toMp = dmg * 0.8;
+      const toHp = dmg * 0.2;
+      player.mp -= toMp;
+      player.hp -= toHp;
+      if (player.mp < 0) {
+        player.hp += player.mp;
+        player.mp = 0;
+      }
+    } else {
+      player.hp -= dmg;
+    }
+  }
+
+  function applyDamageAmount(rawDmg, options = {}) {
+    if (player.dead || rawDmg <= 0) return;
+    applyDamageSplit(rawDmg);
+    if (options.invuln !== false) player.invuln = 0.35;
+    if (options.countHit !== false) hitCount++;
+    if (player.hp <= 0) {
+      player.dead = true;
+      gameOver(options.label || options.reason || "HP 歸零");
+    }
+    updateUI();
   }
 
   function startListening(action, btn) {
@@ -382,14 +1199,51 @@
       stopListening();
       return;
     }
+    if (e.code === "Escape" && ui.potionOverlay && !ui.potionOverlay.classList.contains("hidden")) {
+      hidePotionOverlay();
+      e.preventDefault();
+      return;
+    }
     if (e.code === "KeyE" && !e.repeat && !listeningAction) {
       toggleEditMode();
       e.preventDefault();
       return;
     }
     if (editMode && handleEditorKey(e)) return;
+    if (e.code === keys.manualHp && !e.repeat && !listeningAction) {
+      useManualHpPotion();
+      e.preventDefault();
+      return;
+    }
+    if (isMage() && e.code === keys.manualMp && !e.repeat && !listeningAction) {
+      useManualMpPotion();
+      e.preventDefault();
+      return;
+    }
+    if (playerClass && !e.repeat && !listeningAction) {
+      const cls = getCurrentClass();
+      if (cls) {
+        cls.skills.forEach((skill, index) => {
+          if (e.code === keys[skill.key]) {
+            useSkill(index);
+            e.preventDefault();
+          }
+        });
+      }
+    }
     pressed.add(e.code);
-    if ([keys.left, keys.right, keys.up, keys.down, keys.jump].includes(e.code)) {
+    const boundKeys = [
+      keys.left,
+      keys.right,
+      keys.up,
+      keys.down,
+      keys.jump,
+      keys.skill1,
+      keys.skill2,
+      keys.manualHp,
+      keys.manualMp,
+    ];
+    if (boundKeys.includes(e.code)) {
       e.preventDefault();
     }
   });
@@ -406,11 +1260,13 @@
     player.onPlatform = platforms[0];
     player.dropThrough = 0;
     player.dropThroughPlatform = null;
-    player.hp = 5000;
+    resetSkillState();
+    syncPlayerSettingsToPlayer(true);
     player.elec = 0;
     player.bleed = 0;
     player.slow = 0;
     player.seduced = 0;
+    player.facing = 1;
     player.dead = false;
     player.invuln = 0;
     surviveMs = 0;
@@ -425,6 +1281,8 @@
     state.handRedTimer = 12;
     state.leftSeduceTimer = 18;
     state.rightSeduceTimer = 22;
+    state.leftDispelTimer = 26;
+    state.rightDispelTimer = 30;
     state.tailSweepTimer = 14;
     state.tailMistTimer = 20;
     state.wingFlutterTimer = 25;
@@ -434,15 +1292,24 @@
     state.midHeadBelowHalf = false;
     state.rightRageLeft = 0;
     state.attacks = [];
+    state.redBite = null;
+    state.redBiteTrack = null;
+    state.redBiteLive = null;
     state.fireFloors = [];
     state.mists = [];
     state.dragons = [];
     state.particles = [];
     state.bleedTick = 0;
+    state.petHealTimer = 0;
     updateUI();
   }
 
   function startGame() {
+    if (!playerClass) {
+      showClassOverlay();
+      setSkillMsg("請先選擇職業");
+      return;
+    }
     resetGame();
     running = true;
     paused = false;
@@ -488,15 +1355,30 @@
   function updateUI() {
     const pct = Math.max(0, player.hp / player.maxHp) * 100;
     ui.hpBar.style.width = pct + "%";
-    ui.hpText.textContent = Math.max(0, Math.floor(player.hp));
-    ui.elec.textContent = player.elec;
+    ui.hpText.textContent = `${Math.max(0, Math.floor(player.hp))} / ${player.maxHp}`;
+    if (isMage() && ui.mpBar && ui.mpText) {
+      const mpPct = Math.max(0, player.mp / player.maxMp) * 100;
+      ui.mpBar.style.width = mpPct + "%";
+      ui.mpText.textContent = `${Math.max(0, Math.floor(player.mp))} / ${player.maxMp}`;
+    }
+    ui.elec.textContent = getElecLayers();
     ui.bleed.textContent = player.bleed;
     ui.slow.textContent = player.slow;
-    ui.elec.parentElement.style.borderColor = player.elec >= 10 ? "#f85149" : "#30363d";
+    ui.elec.parentElement.style.borderColor = getElecLayers() >= 10 ? "#f85149" : "#30363d";
     const sec = Math.floor(surviveMs / 1000);
     ui.survive.textContent = `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`;
     ui.dodges.textContent = dodgeCount;
     ui.hits.textContent = hitCount;
+  }
+
+  function addElecLayers(amount) {
+    const layers = Math.floor(amount);
+    if (layers <= 0) return;
+    player.elec = Math.min(15, Math.floor(player.elec) + layers);
+  }
+
+  function getElecLayers() {
+    return Math.floor(player.elec);
   }
 
   function inRect(px, py, r) {
@@ -608,34 +1490,97 @@
     state.stompIndex = (state.stompIndex + 1) % STOMP_CYCLE.length;
   }
 
-  function getRedBiteRect() {
-    const pad = 2;
-    let x = player.x - pad;
-    const y = player.y + 6;
-    const w = player.w + pad * 2;
-    const h = player.h - 8;
+  function getPlayerFacing() {
+    if (player.facing === 1 || player.facing === -1) return player.facing;
+    return player.x + player.w / 2 < W / 2 ? 1 : -1;
+  }
+
+  function computeRedBiteRect(feetY) {
+    const facing = getPlayerFacing();
+    const w = player.w + 4;
+    const h = player.h - 6;
+    const frontShift = 12;
+    const cx = player.x + player.w / 2 + facing * frontShift;
+    let x = Math.round(cx - w / 2);
     x = Math.max(8, Math.min(W - w - 8, x));
+    const y = Math.round(feetY - h + 4);
     return { x, y, w, h };
   }
 
-  function triggerRedBite() {
-    const box = getRedBiteRect();
-    setAttackInfo("中頭 · 紅咬", "鎖定你的站位（約一人大小）— 跳躍可躲");
-    spawnWarning(box.x, box.y, box.w, box.h, 0.8, "rgba(255,60,60,0.4)", "紅咬");
-    setTimeout(() => {
-      addAttack({
-        type: "bite",
-        x: box.x,
-        y: box.y,
-        w: box.w,
-        h: box.h,
-        t: 0,
-        duration: 0.25,
-        damage: 1800,
-        bleed: 1,
+  function updateRedBiteLive(dt) {
+    const live = state.redBiteLive;
+    if (!live) return;
+
+    live.t += dt;
+
+    if (live.phase === "warn") {
+      if (live.t < live.warn) return;
+      live.phase = "bite";
+      live.t = 0;
+    }
+
+    if (live.phase === "bite") {
+      if (!live.hitPlayer) {
+        const atk = {
+          type: "bite",
+          x: live.x,
+          y: live.y,
+          w: live.w,
+          h: live.h,
+          damage: 1800,
+          bleed: 1,
+          label: "紅咬",
+        };
+        if (inRect(player.x, player.y, atk)) {
+          damagePlayer(atk);
+          live.hitPlayer = true;
+        }
+      }
+      if (live.t >= live.biteDur) {
+        if (!live.hitPlayer) dodgeCount++;
+        state.redBiteLive = null;
+      }
+    }
+  }
+
+  function drawRedBiteLive() {
+    const live = state.redBiteLive;
+    if (!live) return;
+    if (live.phase === "warn") {
+      drawAttack({
+        type: "warning",
+        x: live.x,
+        y: live.y,
+        w: live.w,
+        h: live.h,
+        color: "rgba(255,60,60,0.4)",
         label: "紅咬",
       });
-    }, 800);
+      return;
+    }
+    drawAttack({
+      type: "bite",
+      x: live.x,
+      y: live.y,
+      w: live.w,
+      h: live.h,
+      label: "紅咬",
+    });
+  }
+
+  function triggerRedBite() {
+    const warn = 0.85;
+    const feetY = player.onGround ? player.y + player.h : getGroundY();
+    const box = computeRedBiteRect(feetY);
+    setAttackInfo("中頭 · 紅咬", "鎖定出現當下腳下位置 — 走開或跳躍可躲");
+    state.redBiteLive = {
+      phase: "warn",
+      t: 0,
+      warn,
+      biteDur: 0.25,
+      hitPlayer: false,
+      ...box,
+    };
   }
 
   function triggerFire() {
@@ -666,15 +1611,17 @@
   }
 
   function triggerBlackChain() {
-    setAttackInfo("中頭 · 黑色鎖鏈", "中間區域 ~30 秒 — 躲最旁邊或位移");
-    spawnWarning(320, 350, 320, 130, 1.0, "rgba(80,40,120,0.45)", "黑鎖鏈");
+    const chainW = 100;
+    const chainX = Math.floor((W - chainW) / 2);
+    setAttackInfo("中頭 · 黑色鎖鏈", "中間垂直鎖鏈（寬約 100）— 移到鎖鏈外");
+    spawnWarning(chainX, 0, chainW, H, 1.0, "rgba(80,40,120,0.45)", "黑鎖鏈");
     setTimeout(() => {
       addAttack({
         type: "chain",
-        x: 320,
-        y: 350,
-        w: 320,
-        h: 130,
+        x: chainX,
+        y: 0,
+        w: chainW,
+        h: H,
         t: 0,
         duration: 0.4,
         damage: 2800,
@@ -806,21 +1753,60 @@
     }, 1000);
   }
 
+  function playerSide() {
+    return player.x + player.w / 2 < W / 2 ? "left" : "right";
+  }
+
   function triggerDispel(side) {
-    setAttackInfo(side === "left" ? "左手 · 消技" : "右手 · 消技", "消" + (side === "left" ? "左" : "右") + "半邊增益 — 示意警告");
-    spawnWarning(side === "left" ? 0 : W / 2, 250, W / 2, H - 250, 1.5, "rgba(255,220,80,0.2)", "消技");
+    const isLeft = side === "left";
+    const name = isLeft ? "左手 · 消技" : "右手 · 消技";
+    const x = isLeft ? 0 : W / 2;
+    setAttackInfo(
+      name,
+      `以中線分左右 — 消${isLeft ? "左" : "右"}半邊增益（被消後可立即重補技能）`
+    );
+    spawnWarning(x, 0, W / 2, H, 1.5, "rgba(255,220,80,0.22)", "消技");
+    setTimeout(() => {
+      addAttack({
+        type: "dispel",
+        side,
+        x,
+        y: 0,
+        w: W / 2,
+        h: H,
+        t: 0,
+        duration: 0.35,
+        label: name,
+      });
+    }, 1500);
+  }
+
+  function applyDispel(atk) {
+    if (playerSide() !== atk.side) return false;
+    const hadHolyFire = skillState.holyFire > 0;
+    clearActiveBuffs();
+    if (hadHolyFire) {
+      setSkillMsg(`${atk.label}：增益已消除，聖火 HP 已 ÷1.6`);
+    } else {
+      setSkillMsg(`${atk.label}：增益已消除，可立即重補`);
+    }
+    renderSkillBar();
+    hitCount++;
+    updateUI();
+    return true;
   }
 
   function triggerTailSweep() {
-    setAttackInfo("尾巴 · 下甩", "尾巴區必死 — 勿站最右側");
-    spawnWarning(820, 380, 130, 100, 0.9, "rgba(255,80,40,0.45)", "下甩");
+    const z = tailZone;
+    setAttackInfo("尾巴 · 下甩", "尾巴危險區必死 — 微調模式可調整範圍");
+    spawnWarning(z.x, z.y, z.w, z.h, 0.9, "rgba(255,80,40,0.45)", "下甩");
     setTimeout(() => {
       addAttack({
         type: "tail",
-        x: 820,
-        y: 380,
-        w: 130,
-        h: 100,
+        x: z.x,
+        y: z.y,
+        w: z.w,
+        h: z.h,
         t: 0,
         duration: 0.35,
         damage: 20000,
@@ -875,7 +1861,7 @@
   }
 
   function countNearbyElectric() {
-    let n = player.elec > 0 ? 1 : 0;
+    let n = getElecLayers() > 0 ? 1 : 0;
     const c = playerCenter();
     for (const npc of npcs) {
       const dx = c.x - (npc.x + npc.w / 2);
@@ -889,12 +1875,13 @@
     const nearby = countNearbyElectric();
     if (nearby < 3) return baseDmg;
     state.conductionFlash = 0.4;
-    const extra = (nearby - 2) * 800 + player.elec * 120;
+    const extra = (nearby - 2) * 800 + getElecLayers() * 120;
     return baseDmg + extra;
   }
 
   function damagePlayer(atk) {
     if (player.dead || player.invuln > 0) return;
+    if (puppetBlocksAttack(atk)) return;
     if (!inRect(player.x, player.y, atk)) return;
 
     const layer = playerLayer();
@@ -908,23 +1895,30 @@
       if (!player.onGround || player.vy < 0) return;
     }
 
+    if (skillState.mesoShield > 0) {
+      skillState.mesoShield = 0;
+      setSkillMsg("楓幣護盾抵擋了傷害");
+      dodgeCount++;
+      return;
+    }
+
     let dmg = atk.damage || 0;
     if (atk.elec) dmg = applyConduction(dmg);
     if (player.bleed > 10) dmg *= 1 + player.bleed * 0.04;
+    dmg = applySkillDamageMods(atk, dmg);
 
-    player.hp -= dmg;
+    applyDamageSplit(dmg);
     player.invuln = 0.35;
     hitCount++;
 
-    if (atk.elec) player.elec = Math.min(15, player.elec + (atk.elec || 0));
+    if (atk.elec) addElecLayers(atk.elec);
     if (atk.bleed) player.bleed = Math.min(20, player.bleed + (atk.bleed || 0));
     if (atk.slow) player.slow = Math.min(20, player.slow + (atk.slow || 0));
 
-    if (player.elec >= 11) {
+    if (getElecLayers() >= 11) {
       player.hp = 0;
-      gameOver(`帶電 ${player.elec} 層 — Artale 11 層以上即死機制`);
-    }
-    if (atk.lethal || player.hp <= 0) {
+      gameOver(`帶電 ${getElecLayers()} 層 — Artale 11 層以上即死機制`);
+    } else if (atk.lethal || player.hp <= 0) {
       player.dead = true;
       gameOver(atk.label ? `被「${atk.label}」命中` : "HP 歸零");
     }
@@ -945,7 +1939,7 @@
       state.bleedTick = 0;
       if (player.bleed > 0) {
         const dot = 80 + player.bleed * 45;
-        player.hp -= dot;
+        applyDamageSplit(dot);
         if (player.hp <= 0) {
           player.dead = true;
           gameOver(`流血 ${player.bleed} 層持續傷害`);
@@ -1011,7 +2005,17 @@
       state.rightSeduceTimer = 24;
     }
 
-    if (Math.random() < dt * 0.02) triggerDispel(Math.random() > 0.5 ? "left" : "right");
+    state.leftDispelTimer -= dt;
+    if (state.leftDispelTimer <= 0) {
+      triggerDispel("left");
+      state.leftDispelTimer = 28;
+    }
+
+    state.rightDispelTimer -= dt;
+    if (state.rightDispelTimer <= 0) {
+      triggerDispel("right");
+      state.rightDispelTimer = 32;
+    }
 
     state.tailSweepTimer -= dt;
     if (state.tailSweepTimer <= 0) {
@@ -1057,8 +2061,14 @@
       player.vx = player.seduceDir * 260;
     } else {
       player.vx = 0;
-      if (pressed.has(keys.left)) player.vx -= moveSpeed;
-      if (pressed.has(keys.right)) player.vx += moveSpeed;
+      if (pressed.has(keys.left)) {
+        player.vx -= moveSpeed;
+        player.facing = -1;
+      }
+      if (pressed.has(keys.right)) {
+        player.vx += moveSpeed;
+        player.facing = 1;
+      }
     }
 
     if (pressed.has(keys.jump) && player.onGround) {
@@ -1121,15 +2131,16 @@
 
     for (const m of state.mists) {
       if (inRect(player.x, player.y, m)) {
-        player.hp -= 350 * dt;
+        applyDamageSplit(350 * dt);
         if (player.hp <= 0) gameOver("綠霧持續傷害");
       }
     }
 
     for (const d of state.dragons) {
+      if (d.stunned > 0) continue;
       if (inRect(player.x, player.y, d)) {
-        player.hp -= 800 * dt;
-        player.elec = Math.min(15, player.elec + dt * 0.5);
+        applyDamageSplit(800 * dt);
+        if (player.hp <= 0) gameOver("飛龍接觸傷害");
       }
     }
 
@@ -1151,6 +2162,9 @@
             atk.resolved = true;
             atk.hitPlayer = true;
           }
+        } else if (atk.type === "dispel") {
+          if (applyDispel(atk)) atk.hitPlayer = true;
+          atk.resolved = true;
         } else if (inRect(player.x, player.y, atk)) {
           const hpBefore = player.hp;
           damagePlayer(atk);
@@ -1182,7 +2196,30 @@
     });
     state.dragons.forEach((d) => {
       d.t += dt;
-      d.x += d.vx * dt;
+      if (d.pullTimer > 0) {
+        d.pullTimer -= dt;
+        const tx = d.pullTargetX;
+        const ty = d.pullTargetY;
+        const dx = tx - d.x;
+        const dy = ty - d.y;
+        const dist = Math.hypot(dx, dy);
+        const speed = 420;
+        if (dist > 3) {
+          const step = Math.min(dist, speed * dt);
+          d.x += (dx / dist) * step;
+          d.y += (dy / dist) * step;
+        } else {
+          d.x = tx;
+          d.y = ty;
+        }
+        if (d.pullTimer <= 0) d.stunned = 2.5;
+        return;
+      }
+      if (d.stunned > 0) {
+        d.stunned -= dt;
+        return;
+      }
+      d.x += (d.vx || 0) * dt;
     });
     state.dragons = state.dragons.filter((d) => d.x < W + 50);
 
@@ -1202,13 +2239,81 @@
       ctx.textAlign = "left";
     }
 
-    ctx.fillStyle = "rgba(255,80,40,0.18)";
-    ctx.fillRect(820, 360, 130, 90);
-    ctx.fillStyle = "rgba(255,120,80,0.85)";
-    ctx.font = "11px 'Microsoft JhengHei', sans-serif";
-    ctx.fillText("尾巴危險區", 828, 382);
+    if (!editMode) {
+      ctx.fillStyle = "rgba(255,80,40,0.18)";
+      ctx.fillRect(tailZone.x, tailZone.y, tailZone.w, tailZone.h);
+      ctx.fillStyle = "rgba(255,120,80,0.85)";
+      ctx.font = "11px 'Microsoft JhengHei', sans-serif";
+      ctx.fillText(tailZone.label, tailZone.x + 8, tailZone.y + 16);
+    }
+
+    drawDarkBossSprite();
 
     if (editMode) drawPlatformMarkers();
+  }
+
+  function drawDarkBossSprite() {
+    if (!darkBossReady) {
+      ctx.fillStyle = "rgba(120,80,160,0.35)";
+      ctx.fillRect(darkBoss.x, darkBoss.y, darkBoss.w, darkBoss.h);
+      ctx.strokeStyle = "rgba(180,140,220,0.8)";
+      ctx.strokeRect(darkBoss.x + 0.5, darkBoss.y + 0.5, darkBoss.w - 1, darkBoss.h - 1);
+      ctx.fillStyle = "#ddd";
+      ctx.font = "12px 'Microsoft JhengHei', sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText("dark.png 載入中…", darkBoss.x + darkBoss.w / 2, darkBoss.y + darkBoss.h / 2);
+      ctx.textAlign = "left";
+      return;
+    }
+    ctx.drawImage(darkBossImage, darkBoss.x, darkBoss.y, darkBoss.w, darkBoss.h);
+  }
+
+  function drawDarkBossMarker() {
+    if (!editMode) return;
+    const isSelected = selected && selected.type === "darkBoss";
+    ctx.strokeStyle = isSelected ? "#c084fc" : "rgba(168, 85, 247, 0.75)";
+    ctx.lineWidth = isSelected ? 3 : 2;
+    ctx.strokeRect(darkBoss.x + 0.5, darkBoss.y + 0.5, darkBoss.w - 1, darkBoss.h - 1);
+
+    ctx.fillStyle = "rgba(0,0,0,0.55)";
+    ctx.fillRect(darkBoss.x + 4, darkBoss.y - 18, 72, 16);
+    ctx.fillStyle = "#e9d5ff";
+    ctx.font = "bold 10px 'Microsoft JhengHei', sans-serif";
+    ctx.textAlign = "left";
+    ctx.fillText(darkBoss.label, darkBoss.x + 8, darkBoss.y - 7);
+
+    if (isSelected) {
+      ctx.fillStyle = "#ffd54f";
+      ctx.beginPath();
+      ctx.arc(darkBoss.x + darkBoss.w, darkBoss.y + darkBoss.h, 5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  function drawTailZoneMarker() {
+    const isSelected = selected && selected.type === "tailZone";
+    const fill = isSelected ? "rgba(255, 100, 60, 0.42)" : "rgba(255, 80, 40, 0.28)";
+    const stroke = isSelected ? "#ff7043" : "rgba(255, 120, 80, 0.95)";
+
+    ctx.fillStyle = fill;
+    ctx.fillRect(tailZone.x, tailZone.y, tailZone.w, tailZone.h);
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = isSelected ? 3 : 2;
+    ctx.strokeRect(tailZone.x + 0.5, tailZone.y + 0.5, tailZone.w - 1, tailZone.h - 1);
+
+    ctx.fillStyle = "rgba(0,0,0,0.55)";
+    ctx.fillRect(tailZone.x + 4, tailZone.y - 18, 88, 16);
+    ctx.fillStyle = "#ffb199";
+    ctx.font = "bold 10px 'Microsoft JhengHei', sans-serif";
+    ctx.textAlign = "left";
+    ctx.fillText(tailZone.label, tailZone.x + 8, tailZone.y - 7);
+
+    if (isSelected) {
+      ctx.fillStyle = "#ffd54f";
+      ctx.beginPath();
+      ctx.arc(tailZone.x + tailZone.w, tailZone.y + tailZone.h / 2, 5, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
 
   function drawPlatformMarkers() {
@@ -1279,6 +2384,9 @@
       ctx.fillText("↑繩", r.x, r.y + 18);
     }
 
+    drawTailZoneMarker();
+    drawDarkBossMarker();
+
     ctx.restore();
   }
 
@@ -1299,7 +2407,20 @@
     if (atk.type === "iceCone" || atk.type === "iceFloor") ctx.fillStyle = "rgba(100,200,255,0.55)";
     if (atk.type === "chain") ctx.fillStyle = "rgba(60,20,90,0.65)";
     if (atk.type === "tail") ctx.fillStyle = "rgba(255,40,0,0.75)";
+    if (atk.type === "dispel") ctx.fillStyle = "rgba(255,220,80,0.38)";
     ctx.fillRect(atk.x, atk.y, atk.w, atk.h);
+    if (atk.type === "dispel") {
+      ctx.strokeStyle = "rgba(255,200,60,0.9)";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(W / 2, 0);
+      ctx.lineTo(W / 2, H);
+      ctx.stroke();
+      ctx.lineWidth = 1;
+      ctx.fillStyle = "#ffe066";
+      ctx.font = "bold 14px 'Microsoft JhengHei', sans-serif";
+      ctx.fillText(atk.side === "left" ? "← 消左半" : "消右半 →", atk.x + 12, 28);
+    }
   }
 
   function drawEntities() {
@@ -1317,7 +2438,34 @@
     for (const d of state.dragons) {
       const colors = { red: "#e44", blue: "#48f", black: "#333" };
       ctx.fillStyle = colors[d.color] || "#888";
+      if (d.pullTimer > 0) ctx.globalAlpha = 0.85;
+      else if (d.stunned > 0) ctx.globalAlpha = 0.55;
       ctx.fillRect(d.x, d.y, d.w, d.h);
+      ctx.globalAlpha = 1;
+      if (d.pullTimer > 0) {
+        const px = player.x + player.w / 2;
+        const py = player.y + player.h / 2;
+        const cx = d.x + d.w / 2;
+        const cy = d.y + d.h / 2;
+        ctx.strokeStyle = "rgba(255,220,100,0.7)";
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.lineTo(px, py);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+    }
+
+    if (skillState.puppet) {
+      const pup = skillState.puppet;
+      ctx.fillStyle = "#c4a35a";
+      ctx.fillRect(pup.x, pup.y, pup.w, pup.h);
+      ctx.strokeStyle = "#8b6914";
+      ctx.strokeRect(pup.x, pup.y, pup.w, pup.h);
+      ctx.fillStyle = "#fff";
+      ctx.font = "10px sans-serif";
+      ctx.fillText("稻草", pup.x + 2, pup.y - 4);
     }
 
     for (const npc of npcs) {
@@ -1328,7 +2476,9 @@
       ctx.fillText("⚡" + npc.elec, npc.x, npc.y - 4);
     }
 
-    for (const atk of state.attacks) drawAttack(atk);
+    for (const atk of state.attacks) {
+      drawAttack(atk);
+    }
 
     if (state.conductionFlash > 0) {
       ctx.fillStyle = `rgba(255,255,100,${state.conductionFlash})`;
@@ -1340,13 +2490,19 @@
 
     ctx.fillStyle = player.invuln > 0 ? "rgba(255,220,100,0.85)" : "#58a6ff";
     if (player.seduced > 0) ctx.fillStyle = "#c678dd";
+    if (skillState.mesoShield > 0) ctx.strokeStyle = "#ffd700";
+    else if (skillState.magicGuard > 0) ctx.strokeStyle = "#a78bfa";
+    else if (skillState.powerDispel > 0) ctx.strokeStyle = "#f97316";
+    else if (skillState.holyFire > 0) ctx.strokeStyle = "#fde047";
+    else ctx.strokeStyle = "#fff";
     ctx.fillRect(player.x, player.y, player.w, player.h);
-    ctx.strokeStyle = "#fff";
     ctx.strokeRect(player.x, player.y, player.w, player.h);
 
     ctx.fillStyle = "#fff";
     ctx.font = "11px sans-serif";
     ctx.fillText("你", player.x + 6, player.y - 6);
+
+    drawRedBiteLive();
   }
 
   function drawHud() {
@@ -1355,12 +2511,29 @@
       return;
     }
     ctx.fillStyle = "rgba(0,0,0,0.45)";
-    ctx.fillRect(8, 8, 248, 68);
+    const hudH = isMage() ? (skillState.msg ? 108 : 88) : skillState.msg ? 88 : 68;
+    ctx.fillRect(8, 8, 300, hudH);
     ctx.fillStyle = "#ccc";
     ctx.font = "12px 'Microsoft JhengHei', sans-serif";
-    ctx.fillText(`帶電 ${player.elec}  流血 ${player.bleed}  寒氣 ${player.slow}`, 16, 28);
-    ctx.fillText("↓ 上層平台可往下落 · E 進入微調", 16, 48);
-    ctx.fillText(`平台 ${platforms.length} 個均可站立`, 16, 66);
+    ctx.fillText(`帶電 ${getElecLayers()}  流血 ${player.bleed}  寒氣 ${player.slow}`, 16, 28);
+    const cls = getCurrentClass();
+    const clsName = cls ? cls.name : "未選職";
+    if (isMage()) {
+      ctx.fillText(`MP ${Math.floor(player.mp)} / ${player.maxMp}`, 16, 48);
+      ctx.fillText(`${clsName} · X 魔心 · Z 補血 · V 補 MP · E 微調`, 16, 68);
+      ctx.fillText(`寵物每 ${PET_HEAL_INTERVAL}s 補血 · 平台 ${platforms.length} 個`, 16, 86);
+      if (skillState.msg) {
+        ctx.fillStyle = "#f0c14b";
+        ctx.fillText(skillState.msg, 16, 104);
+      }
+    } else {
+      ctx.fillText(`${clsName} · X/C 技能 · Z 手動補血 · 寵物每 ${PET_HEAL_INTERVAL}s`, 16, 48);
+      ctx.fillText(`平台 ${platforms.length} 個均可站立`, 16, 66);
+      if (skillState.msg) {
+        ctx.fillStyle = "#f0c14b";
+        ctx.fillText(skillState.msg, 16, 84);
+      }
+    }
   }
 
   function canvasPoint(evt) {
@@ -1405,6 +2578,17 @@
       g2.appendChild(opt);
     });
     sel.append(g1, g2);
+    const g3 = document.createElement("optgroup");
+    g3.label = "機制";
+    const tailOpt = document.createElement("option");
+    tailOpt.value = "tailZone:tail-danger";
+    tailOpt.textContent = `${tailZone.label} (下甩必死區)`;
+    g3.appendChild(tailOpt);
+    const bossOpt = document.createElement("option");
+    bossOpt.value = "darkBoss:dark-boss";
+    bossOpt.textContent = `${darkBoss.label} (dark.png)`;
+    g3.appendChild(bossOpt);
+    sel.appendChild(g3);
   }
 
   function selectItem(type, id) {
@@ -1414,6 +2598,14 @@
       editorUi.select.value = key;
     }
     syncEditorFields();
+    if (type === "tailZone") {
+      setEditorStatus(`已選：${tailZone.label}`);
+      return;
+    }
+    if (type === "darkBoss") {
+      setEditorStatus(`已選：${darkBoss.label}`);
+      return;
+    }
     const item = type === "platform" ? getPlatformById(id) : getRopeById(id);
     setEditorStatus(`已選：${item ? item.label : id}`);
   }
@@ -1435,6 +2627,20 @@
       editorUi.y.value = Math.round(p.y);
       editorUi.w.value = Math.round(p.w);
       editorUi.h.value = Math.round(p.h);
+      editorUi.w.disabled = false;
+      editorUi.h.disabled = false;
+    } else if (selected.type === "tailZone") {
+      editorUi.x.value = Math.round(tailZone.x);
+      editorUi.y.value = Math.round(tailZone.y);
+      editorUi.w.value = Math.round(tailZone.w);
+      editorUi.h.value = Math.round(tailZone.h);
+      editorUi.w.disabled = false;
+      editorUi.h.disabled = false;
+    } else if (selected.type === "darkBoss") {
+      editorUi.x.value = Math.round(darkBoss.x);
+      editorUi.y.value = Math.round(darkBoss.y);
+      editorUi.w.value = Math.round(darkBoss.w);
+      editorUi.h.value = Math.round(darkBoss.h);
       editorUi.w.disabled = false;
       editorUi.h.disabled = false;
     } else {
@@ -1466,6 +2672,21 @@
         p.x = 0;
         p.w = W;
       }
+    } else if (selected.type === "tailZone") {
+      if (!Number.isNaN(x)) tailZone.x = Math.max(0, Math.min(W - 8, x));
+      if (!Number.isNaN(y)) tailZone.y = Math.max(0, Math.min(H - 4, y));
+      const w = Number(editorUi.w.value);
+      const h = Number(editorUi.h.value);
+      if (!Number.isNaN(w)) tailZone.w = Math.max(8, Math.min(W - tailZone.x, w));
+      if (!Number.isNaN(h)) tailZone.h = Math.max(4, Math.min(H - tailZone.y, h));
+    } else if (selected.type === "darkBoss") {
+      if (!Number.isNaN(x)) darkBoss.x = Math.max(0, Math.min(W - 32, x));
+      if (!Number.isNaN(y)) darkBoss.y = Math.max(0, Math.min(H - 32, y));
+      const w = Number(editorUi.w.value);
+      const h = Number(editorUi.h.value);
+      if (!Number.isNaN(w)) darkBoss.w = Math.max(32, Math.min(W - darkBoss.x, w));
+      if (!Number.isNaN(h)) darkBoss.h = Math.max(32, Math.min(H - darkBoss.y, h));
+      darkBossCustomLayout = true;
     } else {
       const r = getRopeById(selected.id);
       if (!r) return;
@@ -1492,9 +2713,28 @@
     return null;
   }
 
+  function hitTestTailZone(px, py) {
+    const z = tailZone;
+    if (px >= z.x && px <= z.x + z.w && py >= z.y && py <= z.y + z.h) return z;
+    return null;
+  }
+
+  function hitTestDarkBoss(px, py) {
+    const d = darkBoss;
+    if (px >= d.x && px <= d.x + d.w && py >= d.y && py <= d.y + d.h) return d;
+    return null;
+  }
+
   function nudgeSelected(dx, dy) {
     if (!selected) return;
-    if (selected.type === "platform") {
+    if (selected.type === "darkBoss") {
+      darkBoss.x = Math.max(0, Math.min(W - darkBoss.w, darkBoss.x + dx));
+      darkBoss.y = Math.max(0, Math.min(H - darkBoss.h, darkBoss.y + dy));
+      darkBossCustomLayout = true;
+    } else if (selected.type === "tailZone") {
+      tailZone.x = Math.max(0, Math.min(W - tailZone.w, tailZone.x + dx));
+      tailZone.y = Math.max(0, Math.min(H - tailZone.h, tailZone.y + dy));
+    } else if (selected.type === "platform") {
       const p = getPlatformById(selected.id);
       if (!p) return;
       p.x = Math.max(0, Math.min(W - p.w, p.x + dx));
@@ -1535,17 +2775,22 @@
       e.preventDefault();
       return true;
     }
-    if (selected.type === "platform") {
-      const p = getPlatformById(selected.id);
-      if (!p) return false;
+    if (selected.type === "platform" || selected.type === "tailZone" || selected.type === "darkBoss") {
+      const box =
+        selected.type === "platform"
+          ? getPlatformById(selected.id)
+          : selected.type === "tailZone"
+            ? tailZone
+            : darkBoss;
+      if (!box) return false;
       if (e.code === "BracketLeft") {
-        p.w = Math.max(8, p.w - step);
+        box.w = Math.max(8, box.w - step);
         syncEditorFields();
         e.preventDefault();
         return true;
       }
       if (e.code === "BracketRight") {
-        p.w = Math.min(W - p.x, p.w + step);
+        box.w = Math.min(W - box.x, box.w + step);
         syncEditorFields();
         e.preventDefault();
         return true;
@@ -1556,6 +2801,8 @@
       const items = [
         ...platforms.map((p) => ({ type: "platform", id: p.id })),
         ...ropes.map((r) => ({ type: "rope", id: r.id })),
+        { type: "darkBoss", id: darkBoss.id },
+        { type: "tailZone", id: tailZone.id },
       ];
       let idx = items.findIndex((it) => it.type === selected.type && it.id === selected.id);
       idx = e.shiftKey ? (idx - 1 + items.length) % items.length : (idx + 1) % items.length;
@@ -1613,8 +2860,8 @@
     ctx.fillText("微調模式", 16, 28);
     ctx.fillStyle = "#ccc";
     ctx.font = "12px 'Microsoft JhengHei', sans-serif";
-    ctx.fillText("拖曳框線移動 · 拖右側黃點改寬 · Del 刪除選取", 16, 48);
-    ctx.fillText("[ ] 調寬度 · Tab 下一個 · E 離開並自動儲存", 16, 68);
+    ctx.fillText("拖曳框線移動 · 拖右側黃/橘點改寬 · Del 刪除選取", 16, 48);
+    ctx.fillText("含本體圖 / 尾巴危險區 · [ ] 調寬度 · Tab 下一個 · E 離開並自動儲存", 16, 68);
     ctx.fillText("「設為預設」= 還原預設用的配置 · 地面不可刪", 16, 86);
   }
 
@@ -1656,6 +2903,37 @@
         origX: rope.x,
         origY: rope.y,
       };
+      return;
+    }
+    const boss = hitTestDarkBoss(x, y);
+    if (boss) {
+      selectItem("darkBoss", boss.id);
+      const onCorner = x >= boss.x + boss.w - 12 && y >= boss.y + boss.h - 12;
+      dragState = {
+        type: "darkBoss",
+        mode: onCorner ? "resize" : "move",
+        startX: x,
+        startY: y,
+        origX: boss.x,
+        origY: boss.y,
+        origW: boss.w,
+        origH: boss.h,
+      };
+      return;
+    }
+    const tail = hitTestTailZone(x, y);
+    if (tail) {
+      selectItem("tailZone", tail.id);
+      const mode = x >= tail.x + tail.w - 10 ? "resize" : "move";
+      dragState = {
+        type: "tailZone",
+        mode,
+        startX: x,
+        startY: y,
+        origX: tail.x,
+        origY: tail.y,
+        origW: tail.w,
+      };
     }
   }
 
@@ -1680,6 +2958,22 @@
         p.x = Math.max(0, Math.min(W - p.w, p.x));
         p.y = Math.max(0, Math.min(H - p.h, p.y));
       }
+    } else if (dragState.type === "tailZone") {
+      if (dragState.mode === "resize") {
+        tailZone.w = Math.max(8, Math.min(W - tailZone.x, dragState.origW + dx));
+      } else {
+        tailZone.x = Math.max(0, Math.min(W - tailZone.w, dragState.origX + dx));
+        tailZone.y = Math.max(0, Math.min(H - tailZone.h, dragState.origY + dy));
+      }
+    } else if (dragState.type === "darkBoss") {
+      if (dragState.mode === "resize") {
+        darkBoss.w = Math.max(32, Math.min(W - darkBoss.x, dragState.origW + dx));
+        darkBoss.h = Math.max(32, Math.min(H - darkBoss.y, dragState.origH + dy));
+      } else {
+        darkBoss.x = Math.max(0, Math.min(W - darkBoss.w, dragState.origX + dx));
+        darkBoss.y = Math.max(0, Math.min(H - darkBoss.h, dragState.origY + dy));
+      }
+      darkBossCustomLayout = true;
     } else {
       const r = getRopeById(dragState.id);
       if (!r) return;
@@ -1708,7 +3002,10 @@
     surviveMs += dt * 1000;
 
     updateTimers(dt);
+    updateSkillTimers(dt);
+    updatePetHeal(dt);
     updatePlayer(dt);
+    updateRedBiteLive(dt);
     updateAttacks(dt);
     updateUI();
 
@@ -1720,12 +3017,44 @@
   }
 
   loadPlatforms();
+  syncPlayerSettingsToPlayer(true);
+  buildClassGrid();
   buildKeyGrid();
+  buildPotionList();
+  refreshPotionLabels();
+  updateClassUi();
+  renderSkillBar();
+  showClassOverlay();
+  ui.changeClassBtn.addEventListener("click", () => {
+    if (running && !paused) togglePause();
+    showClassOverlay();
+  });
   buildEditorSelect();
   syncEditorFields();
   setEditorButtonsEnabled(false);
   if (hasUserDefaultTemplate()) {
     setEditorStatus("已有自訂預設 · 進入微調模式可編輯");
+  }
+
+  ui.applyHpBtn.addEventListener("click", applyMaxHpFromInput);
+  ui.maxHpInput.addEventListener("change", applyMaxHpFromInput);
+  ui.applyMpBtn.addEventListener("click", applyMaxMpFromInput);
+  ui.maxMpInput.addEventListener("change", applyMaxMpFromInput);
+  ui.useManualHpBtn.addEventListener("click", useManualHpPotion);
+  ui.useManualMpBtn.addEventListener("click", useManualMpPotion);
+  if (ui.openPotionBtn) ui.openPotionBtn.addEventListener("click", showPotionOverlay);
+  if (ui.closePotionBtn) ui.closePotionBtn.addEventListener("click", hidePotionOverlay);
+  if (ui.potionOverlay) {
+    ui.potionOverlay.addEventListener("click", (e) => {
+      if (e.target === ui.potionOverlay) hidePotionOverlay();
+    });
+  }
+  if (ui.petAutoHeal) {
+    ui.petAutoHeal.addEventListener("change", () => {
+      playerSettings.petAutoHeal = ui.petAutoHeal.checked;
+      savePlayerSettings();
+      refreshPotionLabels();
+    });
   }
 
   editorUi.toggle.addEventListener("click", toggleEditMode);

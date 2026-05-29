@@ -4,6 +4,10 @@
   padding: 0;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 :root {
   --bg: #0d1117;
   --panel: #161b22;
@@ -101,6 +105,13 @@ header h1 {
   transition: width 0.2s;
 }
 
+.bar.mp {
+  height: 100%;
+  width: 100%;
+  background: linear-gradient(90deg, #1f6feb, #58a6ff);
+  transition: width 0.2s;
+}
+
 .debuffs {
   display: flex;
   flex-wrap: wrap;
@@ -135,6 +146,267 @@ header h1 {
 
 .stat-grid strong {
   font-size: 1.1rem;
+}
+
+.hp-config {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  align-items: end;
+  margin-bottom: 8px;
+}
+
+.hp-config-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.hp-config-label input {
+  background: #21262d;
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 8px;
+  font-family: inherit;
+}
+
+.hp-apply {
+  margin-top: 0;
+  width: auto;
+  min-width: 88px;
+  padding-left: 10px;
+  padding-right: 10px;
+}
+
+.potion-fieldset {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px 8px;
+  margin: 10px 0;
+}
+
+.potion-fieldset legend {
+  font-size: 0.78rem;
+  color: var(--muted);
+  padding: 0 6px;
+}
+
+.potion-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.potion-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+}
+
+.potion-option:hover {
+  background: #21262d;
+}
+
+.potion-option:has(input:checked) {
+  border-color: var(--accent);
+  background: rgba(88, 166, 255, 0.08);
+}
+
+.potion-option input {
+  accent-color: var(--accent);
+}
+
+.potion-heal {
+  margin-left: auto;
+  color: var(--ok);
+  font-size: 0.78rem;
+}
+
+.potion-selected {
+  font-size: 0.85rem;
+  color: #f0c14b;
+  margin-bottom: 8px;
+}
+
+.potion-msg {
+  min-height: 1.2em;
+  margin-top: 8px;
+  color: var(--ok);
+}
+
+.potion-quick-summary {
+  font-size: 0.82rem;
+  color: var(--muted);
+  line-height: 1.45;
+  margin-bottom: 10px;
+}
+
+.potion-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  background: rgba(0, 0, 0, 0.72);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.potion-overlay.hidden {
+  display: none;
+}
+
+.potion-modal {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  width: min(520px, 100%);
+  max-height: min(90vh, 820px);
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.45);
+}
+
+.potion-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 18px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.potion-modal-header h2 {
+  font-size: 1.05rem;
+}
+
+.potion-close {
+  width: auto;
+  min-width: 72px;
+  margin: 0;
+  padding: 8px 14px;
+}
+
+.potion-modal-body {
+  overflow-y: auto;
+  padding: 14px 18px 18px;
+}
+
+.pet-auto-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0 4px;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.pet-auto-toggle input {
+  width: 16px;
+  height: 16px;
+}
+
+.class-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(0, 0, 0, 0.88);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.class-overlay.hidden {
+  display: none;
+}
+
+.class-box {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 24px;
+  max-width: 720px;
+  width: 100%;
+  text-align: center;
+}
+
+.class-box h2 {
+  margin-bottom: 8px;
+}
+
+.class-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.class-btn {
+  background: #21262d;
+  border: 2px solid var(--border);
+  border-radius: 10px;
+  padding: 16px 10px;
+  color: var(--text);
+  cursor: pointer;
+  font-family: inherit;
+  transition: border-color 0.15s, transform 0.1s;
+}
+
+.class-btn:hover {
+  border-color: var(--accent);
+  transform: translateY(-2px);
+}
+
+.class-btn strong {
+  display: block;
+  font-size: 1rem;
+  margin-bottom: 6px;
+}
+
+.class-btn span {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.class-badge {
+  font-size: 0.9rem;
+  color: #f0c14b;
+  margin-bottom: 10px;
+}
+
+.skill-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.skill-btn {
+  text-align: left;
+  padding: 10px 12px;
+  line-height: 1.35;
+}
+
+.skill-btn small {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+.skill-btn:disabled {
+  opacity: 0.5;
 }
 
 #attackName {
@@ -311,6 +583,23 @@ header h1 {
 
 .stage-actions .btn.secondary {
   margin-top: 0;
+}
+
+.stage-mech {
+  margin-top: 0;
+}
+
+.stage-mech h2 {
+  font-size: 0.95rem;
+  margin-bottom: 8px;
+}
+
+.stage-mech .mech-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 4px 16px;
+  padding-left: 18px;
+  margin: 0;
 }
 
 .stage-wrap {
