@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>動態 QR Code</title>
+  <link rel="stylesheet" href="qrcode.css">
+</head>
+<body>
+  <div class="page">
+    <header class="hero">
+      <p class="eyebrow">Dynamic QR</p>
+      <h1>每秒更換的動態 QR Code</h1>
+      <p class="lede">畫面中央的 QR 會每秒自動刷新，掃到的內容含當下時間與一次性代碼，適合做簽到、短暫有效票券或展示用。</p>
+    </header>
+
+    <main class="stage">
+      <section class="qr-panel" aria-labelledby="qr-title">
+        <div class="qr-meta">
+          <h2 id="qr-title">即時 QR</h2>
+          <div class="live-row">
+            <span class="pulse" id="liveDot" aria-hidden="true"></span>
+            <span id="liveLabel">每秒更新中</span>
+          </div>
+        </div>
+
+        <div class="qr-frame">
+          <div id="qrcode" role="img" aria-label="動態 QR Code"></div>
+          <svg class="ring" viewBox="0 0 120 120" aria-hidden="true">
+            <circle class="ring-track" cx="60" cy="60" r="54"></circle>
+            <circle id="progressRing" class="ring-progress" cx="60" cy="60" r="54"></circle>
+          </svg>
+        </div>
+
+        <p class="payload-label">目前內容</p>
+        <p class="payload" id="payloadText">準備中…</p>
+        <p class="tick-info">第 <strong id="seq">0</strong> 次 · 下一張還有 <strong id="remain">1.0</strong> 秒</p>
+
+        <div class="actions">
+          <button type="button" id="toggleBtn" class="btn primary">暫停</button>
+          <button type="button" id="copyBtn" class="btn">複製內容</button>
+          <button type="button" id="refreshBtn" class="btn">立刻換碼</button>
+        </div>
+        <p class="status" id="statusText" role="status"></p>
+      </section>
+
+      <aside class="side">
+        <section class="card">
+          <h2>內容設定</h2>
+          <label>
+            前綴
+            <input id="prefixInput" type="text" maxlength="40" value="TICKET" autocomplete="off">
+          </label>
+          <label>
+            模式
+            <select id="modeSelect">
+              <option value="ticket">票券代碼（前綴 + 時間 + 亂數）</option>
+              <option value="time">純時間戳</option>
+              <option value="url">網址（前綴當網址，自動加參數）</option>
+            </select>
+          </label>
+          <p class="hint" id="modeHint">例如：TICKET-20260827-082501-A91C</p>
+        </section>
+
+        <section class="card">
+          <h2>最近紀錄</h2>
+          <ol id="historyList" class="history"></ol>
+        </section>
+      </aside>
+    </main>
+  </div>
+
+  <script src="vendor/qrcode.min.js"></script>
+  <script src="qrcode.js"></script>
+</body>
+</html>
