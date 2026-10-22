@@ -47,17 +47,24 @@ class AppTests(unittest.TestCase):
         self.assertAlmostEqual(self.app.alpha, 0.6)
         self.assertAlmostEqual(float(self.app.root.attributes("-alpha")), 0.6)
 
-    def test_custom_keys_are_the_only_ones_shown(self):
+    def test_custom_keys_are_the_ones_you_pick(self):
         self.app.toggle_edit()
+        self.assertEqual(self.app.visible, set())
+        self.assertEqual(self.app.faces["KeyA"][0].cget("bg"), HIDDEN_BG)
         self.app.toggle_visible("KeyA")
-        self.assertNotIn("KeyA", self.app.visible)
-        self.assertIn("KeyA", self.app.faces)
-        face, _label = self.app.faces["KeyA"]
-        self.assertEqual(face.cget("bg"), HIDDEN_BG)
+        self.app.toggle_visible("Space")
+        self.assertEqual(self.app.visible, {"KeyA", "Space"})
+        self.assertEqual(self.app.faces["KeyA"][0].cget("bg"), KEY_BG)
+        self.assertEqual(self.app.faces["KeyS"][0].cget("bg"), HIDDEN_BG)
         self.app.toggle_edit()
-        self.assertNotIn("KeyA", self.app.faces)
-        self.assertIn("KeyS", self.app.faces)
-        self.assertEqual(self.app.layout, "custom")
+        self.assertEqual(set(self.app.faces), {"KeyA", "Space"})
+        self.assertFalse(self.app.editing)
+
+    def test_finish_without_a_pick_stays_in_selection(self):
+        self.app.toggle_edit()
+        self.app.toggle_edit()
+        self.assertTrue(self.app.editing)
+        self.assertIn("請先點你要出現的按鍵", self.app.hint.cget("text"))
 
     def test_settings_restore_alpha_and_visible_keys(self):
         with tempfile.TemporaryDirectory() as directory:

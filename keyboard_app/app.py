@@ -208,7 +208,7 @@ class KeyboardApp:
         button_row.pack(side="right")
         self.full_button = self._tool_button(button_row, "全尺寸", lambda: self.use_layout("full"))
         self.tkl_button = self._tool_button(button_row, "無數字鍵", lambda: self.use_layout("tkl"))
-        self.edit_button = self._tool_button(button_row, "自訂按鍵", self.toggle_edit)
+        self.edit_button = self._tool_button(button_row, "選擇按鍵", self.toggle_edit)
         self.top_var = tk.BooleanVar(value=True)
         top = tk.Checkbutton(
             button_row,
@@ -364,21 +364,26 @@ class KeyboardApp:
         self._save_settings()
 
     def toggle_edit(self):
-        self.editing = not self.editing
+        if self.editing:
+            if not self.visible:
+                self.hint.configure(text="請先點你要出現的按鍵，再按完成。")
+                return
+            self.editing = False
+            self._save_settings()
+        else:
+            self.editing = True
+            self.visible = set()
+            self.layout = "custom"
         self._render()
         for code in self.held:
             self._paint(code, True)
         self._mark_layout_buttons()
         self._set_hint()
-        if not self.editing:
-            self._save_settings()
 
     def toggle_visible(self, code):
-        if code not in ALL_CODES:
+        if code not in ALL_CODES or not self.editing:
             return
         if code in self.visible:
-            if len(self.visible) == 1:
-                return
             self.visible.remove(code)
         else:
             self.visible.add(code)
@@ -387,11 +392,13 @@ class KeyboardApp:
         for held in self.held:
             self._paint(held, True)
         self._mark_layout_buttons()
-        self._save_settings()
+        self._set_hint()
 
     def _set_hint(self):
-        if self.editing:
-            text = "點按鍵可顯示或隱藏。再按一次「完成」就只留下你要的鍵。"
+        if self.editing and not self.visible:
+            text = "點你要出現的按鍵，再按完成。"
+        elif self.editing:
+            text = f"已選 {len(self.visible)} 顆。再點一下可取消，選完按完成。"
         else:
             text = "鍵與鍵之間是透明的。按鍵內容不儲存、不外傳。"
         self.hint.configure(text=text)
@@ -405,7 +412,7 @@ class KeyboardApp:
     def _mark_layout_buttons(self):
         self._style_button(self.full_button, self.layout == "full" and not self.editing)
         self._style_button(self.tkl_button, self.layout == "tkl" and not self.editing)
-        self.edit_button.configure(text="完成" if self.editing else "自訂按鍵")
+        self.edit_button.configure(text="完成" if self.editing else "選擇按鍵")
         self._style_button(self.edit_button, self.editing or self.layout == "custom")
 
     def _render(self):
