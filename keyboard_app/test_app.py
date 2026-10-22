@@ -12,6 +12,7 @@ from app import DOWN_BG, HIDDEN_BG, KEY_BG, KeyboardApp
 class AppTests(unittest.TestCase):
     def setUp(self):
         self.app = KeyboardApp(listen=False, settings_path=None)
+        self.app.release_delay_ms = 0
         self.app.root.update_idletasks()
 
     def tearDown(self):
@@ -47,20 +48,34 @@ class AppTests(unittest.TestCase):
         self.assertAlmostEqual(self.app.alpha, 0.6)
         self.assertAlmostEqual(float(self.app.root.attributes("-alpha")), 0.6)
 
-    def test_custom_keys_are_the_ones_you_pick(self):
+    def test_picked_keys_stay_and_one_click_does_not_rebuild(self):
+        self.app.visible = set()
+        self.app.layout = "custom"
         self.app.toggle_edit()
         self.assertEqual(self.app.visible, set())
-        self.assertEqual(self.app.faces["KeyA"][0].cget("bg"), HIDDEN_BG)
+        self.assertEqual(self.app.faces["KeyS"][0].cget("bg"), HIDDEN_BG)
+        kept = self.app.faces["KeyA"]
         self.app.toggle_visible("KeyA")
         self.app.toggle_visible("Space")
-        self.assertEqual(self.app.visible, {"KeyA", "Space"})
-        self.assertEqual(self.app.faces["KeyA"][0].cget("bg"), KEY_BG)
-        self.assertEqual(self.app.faces["KeyS"][0].cget("bg"), HIDDEN_BG)
+        self.assertIs(self.app.faces["KeyA"], kept)
+        self.assertEqual(kept[0].cget("bg"), KEY_BG)
         self.app.toggle_edit()
         self.assertEqual(set(self.app.faces), {"KeyA", "Space"})
-        self.assertFalse(self.app.editing)
+        self.app.toggle_edit()
+        self.assertEqual(self.app.visible, {"KeyA", "Space"})
+        self.assertEqual(self.app.faces["KeyA"][0].cget("bg"), KEY_BG)
+
+    def test_quick_repeat_does_not_blink_the_key_off(self):
+        self.app.release_delay_ms = 80
+        self.app.set_down("KeyA", True)
+        self.app.set_down("KeyA", False)
+        self.app.set_down("KeyA", True)
+        self.assertTrue(self.app.is_down("KeyA"))
+        self.assertEqual(self.app.faces["KeyA"][0].cget("bg"), DOWN_BG)
 
     def test_finish_without_a_pick_stays_in_selection(self):
+        self.app.visible = set()
+        self.app.layout = "custom"
         self.app.toggle_edit()
         self.app.toggle_edit()
         self.assertTrue(self.app.editing)

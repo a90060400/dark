@@ -176,6 +176,8 @@ class KeyboardApp:
         self._ready = False
         self.faces = {}
         self.held = []
+        self._release_jobs = {}
+        self.release_delay_ms = 80
         self.events = queue.Queue()
         self.listener = None
         self.listener_error = False
@@ -372,8 +374,8 @@ class KeyboardApp:
             self._save_settings()
         else:
             self.editing = True
-            self.visible = set()
-            self.layout = "custom"
+            if self.layout != "custom":
+                self.layout = "custom"
         self._render()
         for code in self.held:
             self._paint(code, True)
@@ -388,19 +390,18 @@ class KeyboardApp:
         else:
             self.visible.add(code)
         self.layout = "custom"
-        self._render()
-        for held in self.held:
-            self._paint(held, True)
+        self._paint(code, code in self.held)
         self._mark_layout_buttons()
         self._set_hint()
+        self._save_settings()
 
     def _set_hint(self):
         if self.editing and not self.visible:
-            text = "點你要出現的按鍵，再按完成。"
+            text = "點你要出現的按鍵。選過的會留著，下次不用重選。"
         elif self.editing:
-            text = f"已選 {len(self.visible)} 顆。再點一下可取消，選完按完成。"
+            text = f"已選 {len(self.visible)} 顆，會先記下來。再點一下可取消，選完按完成。"
         else:
-            text = "鍵與鍵之間是透明的。按鍵內容不儲存、不外傳。"
+            text = "鍵與鍵之間是透明的。按過的鍵不外傳。你選的鍵會留在這台電腦。"
         self.hint.configure(text=text)
 
     def _style_button(self, button, active):
@@ -530,12 +531,30 @@ class KeyboardApp:
         label.configure(bg=bg, fg=fg)
 
     def set_down(self, code, down):
+        pending = self._release_jobs.pop(code, None)
+        if pending is not None:
+            self.root.after_cancel(pending)
         if down:
-            if code not in self.held:
-                self.held.append(code)
-        elif code in self.held:
-            self.held.remove(code)
-        self._paint(code, down)
+            if code in self.held:
+                return
+            self.held.append(code)
+            self._paint(code, True)
+            self._update_readout()
+            return
+        if self.release_delay_ms <= 0:
+            self._finish_release(code)
+            return
+        self._release_jobs[code] = self.root.after(self.release_delay_ms, lambda key_code=code: self._finish_release(key_code))
+
+    def _finish_release(self, code):
+        self._release_jobs.pop(code, None)
+        if code not in self.held:
+            return
+        self.held.remove(code)
+        self._paint(code, False)
+        self._update_readout()
+
+    def _update_readout(self):
         if self.held:
             self.readout.configure(text="  ".join(display_name(item) for item in self.held), fg=KEY_FG)
         else:
@@ -596,6 +615,9 @@ class KeyboardApp:
         self.status.configure(text="全域觀測沒有啟動。點這個視窗後按鍵，仍會亮。", fg="#e7c07a")
 
     def close(self):
+        for job in self._release_jobs.values():
+            self.root.after_cancel(job)
+        self._release_jobs.clear()
         if self.listener is not None:
             self.listener.stop()
         self.root.destroy()
