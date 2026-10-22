@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """桌面鍵盤映射。視窗保持在畫面上，按下的實體鍵會亮起來。"""
 
+import json
 import queue
 import sys
 import tkinter as tk
+from pathlib import Path
 from tkinter import font as tkfont
 
 from pynput import keyboard
@@ -11,14 +13,17 @@ from pynput import keyboard
 from mapping import display_name, from_keysym, normalize
 
 PANEL = "#171c27"
-BOARD = "#121722"
+CHROMA = "#010203"
 KEY_BG = "#2a3142"
 KEY_FG = "#f2f5fb"
+HIDDEN_BG = "#141820"
+HIDDEN_FG = "#6a7384"
 DOWN_BG = "#ffc44d"
 DOWN_FG = "#1c1404"
 MUTED = "#aeb7c8"
 GAP = 5
 SECTION_GAP = 16
+DEFAULT_ALPHA = 0.78
 
 
 def gap(units):
@@ -121,6 +126,17 @@ LEGEND = {
 }
 
 
+def iter_row_codes(rows):
+    for items in rows:
+        for item in items:
+            if item[0] == "key":
+                yield item[1]
+
+
+NUMPAD_CODES = {item[0] for item in NUMPAD}
+ALL_CODES = list(iter_row_codes(MAIN_ROWS)) + list(iter_row_codes(NAV_ROWS)) + [item[0] for item in NUMPAD]
+
+
 def legend_for(code):
     if code in LEGEND:
         return LEGEND[code]
@@ -142,10 +158,10 @@ def pick_font():
 
 
 class KeyboardApp:
-    def __init__(self, listen=True):
+    def __init__(self, listen=True, settings_path="default"):
         self.root = tk.Tk()
         self.root.title("鍵盤映射")
-        self.root.configure(bg=PANEL)
+        self.root.configure(bg=CHROMA)
         self.root.attributes("-topmost", True)
         screen_w = self.root.winfo_screenwidth()
         self.unit = 32 if screen_w < 1100 else 40
@@ -154,31 +170,45 @@ class KeyboardApp:
         self.small_font = tkfont.Font(family=self.font_name, size=7 if self.unit < 36 else 8)
         self.readout_font = tkfont.Font(family=self.font_name, size=22, weight="bold")
         self.layout = "full"
+        self.visible = set(ALL_CODES)
+        self.alpha = DEFAULT_ALPHA
+        self.editing = False
+        self._ready = False
         self.faces = {}
         self.held = []
         self.events = queue.Queue()
         self.listener = None
         self.listener_error = False
         self._placed = False
+        if settings_path == "default":
+            self.settings_path = Path(__file__).with_name("settings.json")
+        elif settings_path:
+            self.settings_path = Path(settings_path)
+        else:
+            self.settings_path = None
+        self._load_settings()
 
-        outer = tk.Frame(self.root, bg=PANEL, padx=14, pady=12)
+        outer = tk.Frame(self.root, bg=CHROMA, padx=14, pady=12)
         outer.pack()
+        bar = tk.Frame(outer, bg=PANEL, padx=10, pady=8)
+        bar.pack(fill="x")
         self.readout = tk.Label(
-            outer,
+            bar,
             text="準備映射",
             bg=PANEL,
             fg=MUTED,
             font=self.readout_font,
         )
         self.readout.pack(fill="x")
-        tools = tk.Frame(outer, bg=PANEL)
-        tools.pack(fill="x", pady=(4, 10))
+        tools = tk.Frame(bar, bg=PANEL)
+        tools.pack(fill="x", pady=(4, 0))
         self.status = tk.Label(tools, text="正在啟動鍵盤觀測…", bg=PANEL, fg=MUTED, font=(self.font_name, 10))
         self.status.pack(side="left")
         button_row = tk.Frame(tools, bg=PANEL)
         button_row.pack(side="right")
         self.full_button = self._tool_button(button_row, "全尺寸", lambda: self.use_layout("full"))
         self.tkl_button = self._tool_button(button_row, "無數字鍵", lambda: self.use_layout("tkl"))
+        self.edit_button = self._tool_button(button_row, "自訂按鍵", self.toggle_edit)
         self.top_var = tk.BooleanVar(value=True)
         top = tk.Checkbutton(
             button_row,
@@ -193,19 +223,42 @@ class KeyboardApp:
             font=(self.font_name, 10),
         )
         top.pack(side="left", padx=(8, 0))
-        self.board_host = tk.Frame(outer, bg=PANEL)
-        self.board_host.pack()
+        opacity_row = tk.Frame(bar, bg=PANEL)
+        opacity_row.pack(fill="x", pady=(6, 0))
+        tk.Label(opacity_row, text="透明度", bg=PANEL, fg=KEY_FG, font=(self.font_name, 10)).pack(side="left")
+        self.opacity_var = tk.IntVar(value=round((1 - self.alpha) * 100))
+        self.opacity_scale = tk.Scale(
+            opacity_row,
+            from_=0,
+            to=70,
+            resolution=5,
+            orient=tk.HORIZONTAL,
+            showvalue=True,
+            length=160,
+            bg=PANEL,
+            fg=KEY_FG,
+            troughcolor="#242b3a",
+            highlightthickness=0,
+            variable=self.opacity_var,
+            command=self._on_opacity,
+        )
+        self.opacity_scale.pack(side="left", padx=(8, 0))
+        self.board_host = tk.Frame(outer, bg=CHROMA)
+        self.board_host.pack(pady=(10, 0))
         self.hint = tk.Label(
-            outer,
-            text="只把目前按住的鍵亮在這個視窗，不儲存、不外傳。",
+            bar,
+            text="鍵與鍵之間是透明的。按鍵內容不儲存、不外傳。",
             bg=PANEL,
             fg="#7d8798",
             font=(self.font_name, 9),
         )
-        self.hint.pack(anchor="w", pady=(8, 0))
+        self.hint.pack(anchor="w", pady=(6, 0))
 
+        self._apply_transparency()
         self._render()
         self._mark_layout_buttons()
+        self._ready = True
+        self.opacity_var.trace_add("write", self._on_opacity_var)
         self.root.protocol("WM_DELETE_WINDOW", self.close)
         self.root.bind_all("<KeyPress>", self._on_tk_press)
         self.root.bind_all("<KeyRelease>", self._on_tk_release)
@@ -237,6 +290,52 @@ class KeyboardApp:
     def _apply_topmost(self):
         self.root.attributes("-topmost", bool(self.top_var.get()))
 
+    def _apply_transparency(self):
+        try:
+            self.root.attributes("-alpha", self.alpha)
+        except tk.TclError:
+            pass
+        if sys.platform == "win32":
+            try:
+                self.root.wm_attributes("-transparentcolor", CHROMA)
+            except tk.TclError:
+                pass
+
+    def _on_opacity_var(self, *_args):
+        self._on_opacity(self.opacity_var.get())
+
+    def _on_opacity(self, raw):
+        self.alpha = min(1.0, max(0.3, 1 - float(raw) / 100))
+        self._apply_transparency()
+        self._save_settings()
+
+    def _load_settings(self):
+        if self.settings_path is None or not self.settings_path.exists():
+            return
+        try:
+            data = json.loads(self.settings_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return
+        alpha = data.get("alpha")
+        if isinstance(alpha, (int, float)) and 0.3 <= float(alpha) <= 1:
+            self.alpha = float(alpha)
+        saved = data.get("visible")
+        if isinstance(saved, list):
+            chosen = {code for code in saved if code in ALL_CODES}
+            if chosen:
+                self.visible = chosen
+                self.layout = "custom"
+                if chosen == set(ALL_CODES):
+                    self.layout = "full"
+                elif chosen == set(ALL_CODES) - NUMPAD_CODES:
+                    self.layout = "tkl"
+
+    def _save_settings(self):
+        if not self._ready or self.settings_path is None:
+            return
+        payload = {"alpha": self.alpha, "visible": sorted(self.visible)}
+        self.settings_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+
     def _place_bottom(self):
         if self._placed:
             return
@@ -249,46 +348,122 @@ class KeyboardApp:
         self._placed = True
 
     def use_layout(self, layout):
-        if layout not in ("full", "tkl") or layout == self.layout:
+        if layout not in ("full", "tkl"):
             return
+        target = set(ALL_CODES) if layout == "full" else set(ALL_CODES) - NUMPAD_CODES
+        if self.layout == layout and self.visible == target and not self.editing:
+            return
+        self.editing = False
         self.layout = layout
+        self.visible = target
         self._render()
         for code in self.held:
             self._paint(code, True)
         self._mark_layout_buttons()
+        self._set_hint()
+        self._save_settings()
+
+    def toggle_edit(self):
+        self.editing = not self.editing
+        self._render()
+        for code in self.held:
+            self._paint(code, True)
+        self._mark_layout_buttons()
+        self._set_hint()
+        if not self.editing:
+            self._save_settings()
+
+    def toggle_visible(self, code):
+        if code not in ALL_CODES:
+            return
+        if code in self.visible:
+            if len(self.visible) == 1:
+                return
+            self.visible.remove(code)
+        else:
+            self.visible.add(code)
+        self.layout = "custom"
+        self._render()
+        for held in self.held:
+            self._paint(held, True)
+        self._mark_layout_buttons()
+        self._save_settings()
+
+    def _set_hint(self):
+        if self.editing:
+            text = "點按鍵可顯示或隱藏。再按一次「完成」就只留下你要的鍵。"
+        else:
+            text = "鍵與鍵之間是透明的。按鍵內容不儲存、不外傳。"
+        self.hint.configure(text=text)
+
+    def _style_button(self, button, active):
+        button.configure(
+            bg=DOWN_BG if active else "#242b3a",
+            fg=DOWN_FG if active else KEY_FG,
+        )
 
     def _mark_layout_buttons(self):
-        self.full_button.configure(bg=DOWN_BG if self.layout == "full" else "#242b3a", fg=DOWN_FG if self.layout == "full" else KEY_FG)
-        self.tkl_button.configure(bg=DOWN_BG if self.layout == "tkl" else "#242b3a", fg=DOWN_FG if self.layout == "tkl" else KEY_FG)
+        self._style_button(self.full_button, self.layout == "full" and not self.editing)
+        self._style_button(self.tkl_button, self.layout == "tkl" and not self.editing)
+        self.edit_button.configure(text="完成" if self.editing else "自訂按鍵")
+        self._style_button(self.edit_button, self.editing or self.layout == "custom")
 
     def _render(self):
         for child in self.board_host.winfo_children():
             child.destroy()
         self.faces = {}
-        board = tk.Frame(self.board_host, bg=PANEL)
+        board = tk.Frame(self.board_host, bg=CHROMA)
         board.pack()
+        sections = []
         main = self._rows(board, MAIN_ROWS)
+        if main is not None:
+            sections.append(main)
         nav = self._rows(board, NAV_ROWS)
-        main.pack(side="left", anchor="s")
-        nav.pack(side="left", anchor="s", padx=(SECTION_GAP, 0))
-        if self.layout == "full":
+        if nav is not None:
+            sections.append(nav)
+        if self.editing or self._numpad_wanted():
             pad = self._numpad(board)
-            pad.pack(side="left", anchor="s", padx=(SECTION_GAP, 0))
+            if pad is not None:
+                sections.append(pad)
+        for index, section in enumerate(sections):
+            section.pack(side="left", anchor="s", padx=(SECTION_GAP if index else 0, 0))
+
+    def _shows(self, code):
+        return self.editing or code in self.visible
+
+    def _numpad_wanted(self):
+        return any(code in self.visible for code in NUMPAD_CODES)
 
     def _rows(self, parent, rows):
-        block = tk.Frame(parent, bg=PANEL)
+        block = tk.Frame(parent, bg=CHROMA)
+        used = False
         for items in rows:
-            row = tk.Frame(block, bg=PANEL)
-            row.pack(anchor="w")
+            kept = []
             for item in items:
+                if item[0] == "gap":
+                    if not self.editing and self.layout == "custom":
+                        continue
+                    kept.append(item)
+                    continue
+                if self._shows(item[1]):
+                    kept.append(item)
+            if not any(item[0] == "key" for item in kept):
+                continue
+            row = tk.Frame(block, bg=CHROMA)
+            row.pack(anchor="w")
+            for item in kept:
                 if item[0] == "gap":
                     self._slot(row, item[1], 1)
                     continue
                 self._add_key(row, item[1], item[2], 1)
+            used = True
+        if not used:
+            block.destroy()
+            return None
         return block
 
     def _slot(self, parent, units_w, units_h):
-        slot = tk.Frame(parent, width=int(self.unit * units_w), height=int(self.unit * units_h), bg=PANEL)
+        slot = tk.Frame(parent, width=int(self.unit * units_w), height=int(self.unit * units_h), bg=CHROMA)
         slot.pack(side="left")
         slot.pack_propagate(False)
         return slot
@@ -302,12 +477,26 @@ class KeyboardApp:
         label = tk.Label(face, text=label_text, bg=KEY_BG, fg=KEY_FG, font=label_font)
         label.place(relx=0.5, rely=0.5, anchor="center")
         self.faces[code] = (face, label)
+        self._bind_key(face, label, code)
+        self._paint(code, code in self.held)
         return face
 
+    def _bind_key(self, face, label, code):
+        def handler(_event, key_code=code):
+            if self.editing:
+                self.toggle_visible(key_code)
+            return "break"
+
+        face.bind("<Button-1>", handler)
+        label.bind("<Button-1>", handler)
+
     def _numpad(self, parent):
-        pad = tk.Frame(parent, bg=PANEL)
-        for code, row, column, rowspan, colspan in NUMPAD:
-            slot = tk.Frame(pad, width=int(self.unit * colspan), height=int(self.unit * rowspan), bg=PANEL)
+        shown = [item for item in NUMPAD if self._shows(item[0])]
+        if not shown:
+            return None
+        pad = tk.Frame(parent, bg=CHROMA)
+        for code, row, column, rowspan, colspan in shown:
+            slot = tk.Frame(pad, width=int(self.unit * colspan), height=int(self.unit * rowspan), bg=CHROMA)
             slot.grid(row=row, column=column, rowspan=rowspan, columnspan=colspan, sticky="nw")
             slot.grid_propagate(False)
             face = tk.Frame(slot, bg=KEY_BG, highlightthickness=1, highlightbackground="#59637a")
@@ -315,6 +504,8 @@ class KeyboardApp:
             label = tk.Label(face, text=legend_for(code), bg=KEY_BG, fg=KEY_FG, font=self.key_font)
             label.place(relx=0.5, rely=0.5, anchor="center")
             self.faces[code] = (face, label)
+            self._bind_key(face, label, code)
+            self._paint(code, code in self.held)
         return pad
 
     def _paint(self, code, down):
@@ -322,8 +513,12 @@ class KeyboardApp:
         if widgets is None:
             return
         face, label = widgets
-        bg = DOWN_BG if down else KEY_BG
-        fg = DOWN_FG if down else KEY_FG
+        if self.editing and code not in self.visible:
+            bg, fg = HIDDEN_BG, HIDDEN_FG
+        elif down:
+            bg, fg = DOWN_BG, DOWN_FG
+        else:
+            bg, fg = KEY_BG, KEY_FG
         face.configure(bg=bg)
         label.configure(bg=bg, fg=fg)
 
