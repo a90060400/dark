@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""整理 @aleabitoreddit 公開貼文，依台北日期輸出每日摘要。
+"""整理 @aleabitoreddit 公開貼文，輸出可開啟的提及網頁。
 
 資料來自 FxEmbed 的公開時間軸介面，對應 X 上已經公開的貼文。
-這支程式只做整理，不判斷買賣，也不是投資建議。
+這支程式只統計代號出現次數，不判斷買賣，也不是投資建議。
 """
 
 from __future__ import annotations
@@ -49,13 +49,16 @@ class Post:
         return self.created.astimezone(TAIPEI).date()
 
 
-def extract_tickers(text: str) -> list[str]:
-    found: list[str] = []
+def ticker_counts(text: str) -> dict[str, int]:
+    counts: dict[str, int] = {}
     for match in TICKER_RE.finditer(text):
         ticker = match.group(1).upper()
-        if ticker not in found:
-            found.append(ticker)
-    return found
+        counts[ticker] = counts.get(ticker, 0) + 1
+    return counts
+
+
+def extract_tickers(text: str) -> list[str]:
+    return list(ticker_counts(text))
 
 
 def parse_post(item: dict[str, object], handle: str) -> Post | None:
@@ -142,11 +145,12 @@ def collect_posts(
     end: datetime,
     max_pages: int,
     timeout: float,
-) -> list[Post]:
+) -> tuple[list[Post], bool]:
     cursor: str | None = None
     seen: set[str] = set()
     collected: list[Post] = []
-    for _ in range(max_pages):
+    truncated = False
+    for index in range(max_pages):
         page, cursor = fetch_page(handle, cursor, timeout)
         if not page:
             break
@@ -159,13 +163,15 @@ def collect_posts(
             page_posts.append(post)
             if start <= post.created < end:
                 collected.append(post)
-        if page_posts and all(post.created < start for post in page_posts):
+        reached_older = bool(page_posts) and all(post.created < start for post in page_posts)
+        if reached_older or cursor is None:
             break
-        if cursor is None:
+        if index == max_pages - 1:
+            truncated = True
             break
         time.sleep(0.4)
     collected.sort(key=lambda post: post.created, reverse=True)
-    return collected
+    return collected, truncated
 
 
 def day_window(day: date) -> tuple[datetime, datetime]:
@@ -207,13 +213,20 @@ def render_markdown(day: date, posts: list[Post], handle: str) -> str:
         lines.append("今天的貼文沒有 `$` 代號。")
         lines.append("")
     else:
-        lines.append("| 代號 | 出現貼文數 | 最新一則 |")
-        lines.append("| --- | ---: | --- |")
-        ranked = sorted(ticker_posts.items(), key=lambda item: (-len(item[1]), item[0]))
+        lines.append("| 代號 | 提及次數 | 貼文數 | 最新一則 |")
+        lines.append("| --- | ---: | ---: | --- |")
+        ranked = sorted(
+            ticker_posts.items(),
+            key=lambda item: (
+                -sum(ticker_counts(post.text).get(item[0], 0) for post in item[1]),
+                item[0],
+            ),
+        )
         for ticker, mentions in ranked:
             latest = mentions[0]
+            hits = sum(ticker_counts(post.text).get(ticker, 0) for post in mentions)
             stamp = latest.created.strftime("%H:%M")
-            lines.append(f"| {ticker} | {len(mentions)} | [{stamp}]({latest.url}) |")
+            lines.append(f"| {ticker} | {hits} | {len(mentions)} | [{stamp}]({latest.url}) |")
         lines.append("")
 
     lines.extend(["## 貼文", ""])
@@ -266,6 +279,52 @@ def write_day(out_dir: Path, day: date, posts: list[Post], handle: str) -> tuple
     return markdown_path, json_path
 
 
+def build_board_payload(
+    posts: list[Post],
+    handle: str,
+    start_day: date,
+    end_day: date,
+    truncated: bool,
+) -> dict[str, object]:
+    dates: list[str] = []
+    cursor = end_day
+    while cursor >= start_day:
+        dates.append(cursor.isoformat())
+        cursor -= timedelta(days=1)
+    return {
+        "handle": handle,
+        "timezone": "Asia/Taipei",
+        "generated_at": datetime.now(TAIPEI).isoformat(timespec="minutes"),
+        "start": start_day.isoformat(),
+        "end": end_day.isoformat(),
+        "dates": dates,
+        "truncated": truncated,
+        "posts": [
+            {
+                "id": post.id,
+                "url": post.url,
+                "created_at": post.created.strftime("%Y-%m-%d %H:%M"),
+                "date": post.taipei_date.isoformat(),
+                "is_reply": post.is_reply,
+                "mentions": ticker_counts(post.text),
+                "text": post.text,
+            }
+            for post in posts
+        ],
+    }
+
+
+def render_board_html(payload: dict[str, object]) -> str:
+    template_path = Path(__file__).resolve().with_name("board_template.html")
+    template = template_path.read_text(encoding="utf-8")
+    marker = '<script id="board-data" type="application/json"></script>'
+    if marker not in template:
+        raise RuntimeError("網頁模板缺少資料標記")
+    blob = json.dumps(payload, ensure_ascii=False).replace("<", "\\u003c")
+    filled = marker.replace("></script>", ">" + blob + "</script>")
+    return template.replace(marker, filled, 1)
+
+
 def resolve_days(today: date, explicit: str | None, yesterday: bool, span: int) -> list[date]:
     if explicit and yesterday:
         raise ValueError("不能同時指定日期與「昨天」。")
@@ -285,14 +344,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--handle", default="aleabitoreddit", help="X 帳號，預設 aleabitoreddit")
     parser.add_argument("--date", help="台北日期 YYYY-MM-DD。預設為今天。")
     parser.add_argument("--yesterday", action="store_true", help="改整理昨天（台北）")
-    parser.add_argument("--days", type=int, default=1, help="從結束日往前幾個台北日，預設 1")
+    parser.add_argument("--days", type=int, default=14, help="從結束日往前幾個台北日，預設 14")
     parser.add_argument(
         "--out",
         type=Path,
         default=Path(__file__).resolve().parent / "reports",
         help="輸出目錄",
     )
-    parser.add_argument("--max-pages", type=int, default=15, help="最多翻幾頁時間軸")
+    parser.add_argument("--max-pages", type=int, default=40, help="最多翻幾頁時間軸")
     parser.add_argument("--timeout", type=float, default=30.0, help="單次請求逾時秒數")
     return parser
 
@@ -310,11 +369,14 @@ def main(argv: list[str] | None = None) -> int:
 
     start, _ = day_window(days[0])
     _, end = day_window(days[-1])
+    print(f"正在抓取 {days[0].isoformat()} 至 {days[-1].isoformat()}（台北）的公開貼文…")
     try:
-        posts = collect_posts(args.handle, start, end, args.max_pages, args.timeout)
+        posts, truncated = collect_posts(args.handle, start, end, args.max_pages, args.timeout)
     except RuntimeError as error:
         print(error, file=sys.stderr)
         return 1
+    if truncated:
+        print("警告：已達頁數上限，較早的貼文沒有收進來。可加大 --max-pages。", file=sys.stderr)
 
     by_day: dict[date, list[Post]] = {day: [] for day in days}
     for post in posts:
@@ -323,9 +385,13 @@ def main(argv: list[str] | None = None) -> int:
             bucket.append(post)
 
     for day in days:
-        markdown_path, json_path = write_day(args.out, day, by_day[day], args.handle)
+        markdown_path, _json_path = write_day(args.out, day, by_day[day], args.handle)
         print(f"{day.isoformat()} 貼文 {len(by_day[day])} → {markdown_path}")
-        print(f"  {json_path}")
+
+    board_path = args.out / "index.html"
+    payload = build_board_payload(posts, args.handle, days[0], days[-1], truncated)
+    board_path.write_text(render_board_html(payload), encoding="utf-8")
+    print(f"網頁 → {board_path}")
     return 0
 
 

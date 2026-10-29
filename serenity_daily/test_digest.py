@@ -6,7 +6,16 @@ import unittest
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
-from digest import Post, extract_tickers, parse_post, render_markdown, resolve_days
+from digest import (
+    Post,
+    build_board_payload,
+    extract_tickers,
+    parse_post,
+    render_board_html,
+    render_markdown,
+    resolve_days,
+    ticker_counts,
+)
 
 TAIPEI = ZoneInfo("Asia/Taipei")
 
@@ -35,6 +44,9 @@ class ExtractTickersTest(unittest.TestCase):
 
     def test_ignores_plain_dollars(self) -> None:
         self.assertEqual(extract_tickers("spend $75 on lunch"), [])
+
+    def test_counts_repeated_cashtags(self) -> None:
+        self.assertEqual(ticker_counts("$MU and $mu again, plus $LITE"), {"MU": 2, "LITE": 1})
 
 
 class ParsePostTest(unittest.TestCase):
@@ -102,8 +114,8 @@ class RenderAndDatesTest(unittest.TestCase):
             "aleabitoreddit",
         )
         self.assertIn("不是投資建議", body)
-        self.assertIn("| MRVL | 1 |", body)
-        self.assertIn("| LITE | 1 |", body)
+        self.assertIn("| MRVL | 1 | 1 |", body)
+        self.assertIn("| LITE | 1 | 1 |", body)
         self.assertIn("https://x.com/aleabitoreddit/status/2910", body)
 
     def test_empty_day(self) -> None:
@@ -113,6 +125,21 @@ class RenderAndDatesTest(unittest.TestCase):
     def test_resolve_yesterday_span(self) -> None:
         days = resolve_days(date(2026, 10, 29), None, True, 2)
         self.assertEqual(days, [date(2026, 10, 27), date(2026, 10, 28)])
+
+    def test_board_counts_mentions_and_embeds_them(self) -> None:
+        posts = [
+            _post("$MU $MU keeps showing up", 11),
+            _post("reply $MU", 9),
+        ]
+        payload = build_board_payload(posts, "aleabitoreddit", date(2026, 10, 28), date(2026, 10, 29), False)
+        stored = payload["posts"]
+        self.assertIsInstance(stored, list)
+        assert isinstance(stored, list)
+        self.assertEqual(stored[0]["mentions"], {"MU": 2})
+        html = render_board_html(payload)
+        self.assertIn('"MU": 2', html)
+        self.assertIn("提及次數", html)
+        self.assertIn('<script id="board-data" type="application/json">{', html)
 
     def test_rejects_date_and_yesterday_together(self) -> None:
         with self.assertRaises(ValueError):
