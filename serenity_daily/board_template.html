@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Serenity 提及整理</title>
+  <style>
+    :root { color-scheme: light; }
+    body {
+      margin: 0;
+      font: 16px/1.5 "Segoe UI", "Noto Sans TC", "PingFang TC", sans-serif;
+      background: #f6f5f2;
+      color: #1c1b19;
+    }
+    main { max-width: 980px; margin: 0 auto; padding: 24px 16px 72px; }
+    h1 { font-size: 28px; line-height: 1.2; margin: 0 0 8px; }
+    h2 { font-size: 20px; margin: 0 0 8px; }
+    a { color: #1a4f8b; }
+    .meta { color: #5c574e; margin: 0 0 12px; }
+    .banner {
+      background: #fff7e8;
+      border: 1px solid #e4d3a8;
+      padding: 10px 12px;
+      margin: 0 0 16px;
+    }
+    .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+    .days { display: flex; flex-wrap: wrap; gap: 6px; }
+    button, input { font: inherit; }
+    .days button {
+      border: 1px solid #c9c3b8;
+      background: #fff;
+      padding: 6px 10px;
+      cursor: pointer;
+    }
+    .days button[aria-pressed="true"] {
+      background: #1c1b19;
+      color: #fff;
+      border-color: #1c1b19;
+    }
+    input[type="search"] {
+      padding: 8px 10px;
+      border: 1px solid #c9c3b8;
+      background: #fff;
+      min-width: min(100%, 200px);
+    }
+    .table-wrap { overflow-x: auto; background: #fff; border: 1px solid #e6e1d8; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid #e6e1d8; vertical-align: top; }
+    th { font-size: 13px; color: #5c574e; font-weight: 600; }
+    .count { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    tbody tr { cursor: pointer; }
+    tbody tr[aria-pressed="true"] { background: #efeae2; }
+    .excerpt { color: #3f3b36; min-width: 180px; }
+    #detail { margin-top: 20px; background: #fff; border: 1px solid #e6e1d8; padding: 16px; }
+    .post { border-top: 1px solid #e6e1d8; padding: 12px 0; }
+    .post:first-child { border-top: 0; padding-top: 0; }
+    .post p { margin: 8px 0 0; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Serenity 提及整理</h1>
+    <p class="meta" id="summary"></p>
+    <p class="banner" id="truncated" hidden></p>
+    <div class="controls">
+      <div class="days" id="days" role="group" aria-label="日期範圍"></div>
+      <input id="query" type="search" placeholder="搜尋代號" aria-label="搜尋代號">
+    </div>
+    <p class="meta" id="stats"></p>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>代號</th>
+            <th class="count">提及次數</th>
+            <th class="count">貼文數</th>
+            <th>最近提及</th>
+            <th>最近內容</th>
+          </tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+    <section id="detail" hidden aria-live="polite">
+      <h2 id="detail-title"></h2>
+      <div id="detail-posts"></div>
+    </section>
+  </main>
+  <script id="board-data" type="application/json"></script>
+  <script>
+    const data = JSON.parse(document.getElementById("board-data").textContent);
+    const params = new URLSearchParams(location.search);
+    let activeDate = params.get("day") || "all";
+    let selected = (params.get("ticker") || "").toUpperCase();
+    const queryInput = document.getElementById("query");
+    queryInput.value = params.get("q") || "";
+
+    function postsInScope() {
+      if (activeDate === "all") return data.posts;
+      return data.posts.filter((post) => post.date === activeDate);
+    }
+
+    function aggregate(posts) {
+      const map = new Map();
+      for (const post of posts) {
+        const mentions = post.mentions || {};
+        for (const [ticker, hits] of Object.entries(mentions)) {
+          let row = map.get(ticker);
+          if (!row) {
+            row = { ticker, count: 0, posts: [] };
+            map.set(ticker, row);
+          }
+          row.count += hits;
+          row.posts.push(Object.assign({ hits }, post));
+        }
+      }
+      return Array.from(map.values()).sort((a, b) => b.count - a.count || a.ticker.localeCompare(b.ticker));
+    }
+
+    function excerpt(text) {
+      const flat = text.replace(/\s+/g, " ").trim();
+      return flat.length > 96 ? flat.slice(0, 96) + "…" : flat;
+    }
+
+    function renderDays() {
+      const host = document.getElementById("days");
+      host.replaceChildren();
+      const choices = ["all"].concat(data.dates);
+      for (const day of choices) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.textContent = day === "all" ? "全部" : day.slice(5);
+        button.setAttribute("aria-pressed", String(activeDate === day));
+        button.addEventListener("click", () => {
+          activeDate = day;
+          selected = "";
+          render();
+        });
+        host.appendChild(button);
+      }
+    }
+
+    function renderDetail(row) {
+      const section = document.getElementById("detail");
+      const title = document.getElementById("detail-title");
+      const list = document.getElementById("detail-posts");
+      if (!row) {
+        section.hidden = true;
+        title.textContent = "";
+        list.replaceChildren();
+        return;
+      }
+      section.hidden = false;
+      title.textContent = row.ticker + " · 提及 " + row.count + " 次 · " + row.posts.length + " 則貼文";
+      list.replaceChildren();
+      for (const post of row.posts) {
+        const article = document.createElement("article");
+        article.className = "post";
+        const head = document.createElement("div");
+        const link = document.createElement("a");
+        link.href = post.url;
+        link.textContent = post.created_at + (post.is_reply ? " 回覆" : " 貼文");
+        link.target = "_blank";
+        link.rel = "noreferrer";
+        head.append(link, document.createTextNode(" · 這則出現 " + post.hits + " 次"));
+        const body = document.createElement("p");
+        body.textContent = post.text;
+        article.append(head, body);
+        list.appendChild(article);
+      }
+    }
+
+    function render() {
+      renderDays();
+      const query = queryInput.value.trim().toUpperCase();
+      let rows = aggregate(postsInScope());
+      if (query) rows = rows.filter((row) => row.ticker.includes(query));
+      const body = document.getElementById("rows");
+      body.replaceChildren();
+      document.getElementById("stats").textContent =
+        "代號 " + rows.length + " 個。提及次數是 $代號 在文字裡出現的次數，同一則寫兩次算兩次。";
+      if (!rows.length) {
+        const tr = document.createElement("tr");
+        const td = document.createElement("td");
+        td.colSpan = 5;
+        td.textContent = "這個範圍沒有符合的代號。";
+        tr.appendChild(td);
+        body.appendChild(tr);
+        renderDetail(null);
+        return;
+      }
+      const current = rows.find((row) => row.ticker === selected) || null;
+      if (!current) selected = "";
+      for (const row of rows) {
+        const tr = document.createElement("tr");
+        tr.tabIndex = 0;
+        tr.setAttribute("aria-pressed", String(row.ticker === selected));
+        const open = () => {
+          selected = selected === row.ticker ? "" : row.ticker;
+          render();
+          if (selected) document.getElementById("detail").scrollIntoView({ block: "nearest" });
+        };
+        tr.addEventListener("click", open);
+        tr.addEventListener("keydown", (event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            open();
+          }
+        });
+        const cells = [
+          row.ticker,
+          String(row.count),
+          String(row.posts.length),
+          row.posts[0].created_at,
+          excerpt(row.posts[0].text),
+        ];
+        cells.forEach((value, index) => {
+          const td = document.createElement("td");
+          if (index === 1 || index === 2) td.className = "count";
+          if (index === 4) td.className = "excerpt";
+          td.textContent = value;
+          tr.appendChild(td);
+        });
+        body.appendChild(tr);
+      }
+      renderDetail(current);
+    }
+
+    const summary = document.getElementById("summary");
+    summary.textContent =
+      "@" + data.handle + " · " + data.start + " 至 " + data.end +
+      "（台北）· 更新於 " + data.generated_at +
+      "。公開貼文整理，不是投資建議。作者可能持有提到的股票。";
+    const banner = document.getElementById("truncated");
+    if (data.truncated) {
+      banner.hidden = false;
+      banner.textContent = "時間軸在頁數上限就停了，較早的提及沒有全部收進來。可把 --max-pages 調大後再跑一次。";
+    }
+    queryInput.addEventListener("input", () => {
+      selected = "";
+      render();
+    });
+    render();
+  </script>
+</body>
+</html>
